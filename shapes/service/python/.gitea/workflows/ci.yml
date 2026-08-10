@@ -1,0 +1,119 @@
+name: <name> CI (service, python)
+
+# Gitea Actions workflow for <name>.
+# Mirror of .gitlab-ci.yml but using GitHub Actions syntax so it runs on
+# the per-project act_runner (see gitea/docker-compose.gitea.yml).
+#
+# Stages: lint → typecheck → secret-scan → build → test
+# Each stage is blocking — no `|| echo WARN` escape hatches. The review
+# agent (bot/tools/review_pr.py) waits for this pipeline to finish before
+# deciding merge/request_changes/reject — a red pipeline forces
+# request_changes regardless of the LLM's verdict.
+#
+# Local equivalents (run before pushing — see .pre-commit-config.yaml):
+#   pre-commit run --all-files           # ruff + format + gitleaks
+#   pre-commit run --all-files --hook-stage pre-push   # + mypy + pytest
+
+on:
+  push:
+    branches: [main, "bot/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ruff
+        run: pip install --quiet ruff
+      - name: ruff check
+        run: ruff check .
+      - name: ruff format --check
+        run: ruff format --check .
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps + mypy
+        run: |
+          pip install --quiet -r requirements.txt -r requirements-dev.txt
+      - name: mypy (strict, per pyproject.toml)
+        run: mypy .
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        shell: bash
+        run: |
+          # Install gitleaks CLI directly — gitleaks/gitleaks-action@v2 now
+          # requires a paid GITLEAKS_LICENSE secret, but the underlying CLI
+          # remains open-source under an MIT license.
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64) ARCH=x64 ;;
+            aarch64|arm64) ARCH=arm64 ;;
+          esac
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_${ARCH}.tar.gz" \
+            | tar -xzC /tmp gitleaks
+          /tmp/gitleaks detect --config .gitleaks.toml --no-git --verbose --redact
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, secret-scan]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build --pull --tag <name>:${{ github.sha }} .
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build --tag <name>:${{ github.sha }} .
+      - name: Start service
+        run: |
+          cp .env.example .env
+          # No -p port mapping: the test uses `docker exec` to reach the
+          # container's internal loopback, and binding 127.0.0.1:<PORT> on
+          # the host clashes with any live instance of this service.
+          docker run -d --name <name>-test --env-file .env <name>:${{ github.sha }}
+          echo "Waiting for /health..."
+          for i in $(seq 1 30); do
+            if docker exec <name>-test curl -sf http://127.0.0.1:<PORT>/health > /dev/null 2>&1; then
+              echo "service up after ${i}s"; break
+            fi
+            sleep 1
+            if [ "$i" = "30" ]; then
+              echo "service did not become healthy within 30s"
+              docker logs <name>-test
+              exit 1
+            fi
+          done
+      - name: Run qa_check.py inside the container
+        run: docker exec <name>-test python3 /app/qa_check.py
+      - name: Run pytest (mandatory — starter tests ship with every shape)
+        run: |
+          if ! docker exec <name>-test python3 -c "import pytest" 2>/dev/null; then
+            echo "pytest not installed — add 'pytest' to requirements.txt"
+            exit 1
+          fi
+          docker exec <name>-test python3 -m pytest -q /app/tests
+      - name: Teardown
+        if: always()
+        run: |
+          docker logs --tail 200 <name>-test || true
+          docker rm -f <name>-test || true

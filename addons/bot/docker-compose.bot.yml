@@ -1,0 +1,119 @@
+# Compose overlay for <name>-bot.
+#
+# Merge with the project's main docker-compose.yml to bring the bot up
+# alongside the rest of the project:
+#
+#     docker compose -f docker-compose.yml -f bot/docker-compose.bot.yml up -d
+#
+# Or via the Makefile:
+#
+#     make bot           # start the bot alongside the project
+#     make bot-logs      # follow the bot's logs
+#     make bot-down      # stop the bot (leaves the project running)
+#
+# The bot container attaches to three networks:
+#   * default (auto) — can reach <name>-gitea and the project's own service
+#   * irc_default (external) — reaches irc-server (or whichever IRC server
+#     the operator runs) by service name
+#   * rag_network (external) — reaches the operator's LLM container
+#     (rag-ollama, llm-router, etc.) by service name
+#
+# Edit the external network names below if your operator stack uses
+# different names. Comment out any network you don't need.
+
+services:
+  <name>-bot:
+    build:
+      # Build context is resolved relative to the FIRST -f compose file
+      # (the project root's docker-compose.yml), so `.` is the project root
+      # where bot/Dockerfile and bot/requirements.txt live.
+      context: .
+      dockerfile: bot/Dockerfile
+      args:
+        APP_UID: ${HOST_UID:-1000}
+        APP_GID: ${HOST_GID:-1000}
+    image: <name>-bot:latest
+    container_name: <name>-bot
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    # env_file and volume paths are resolved relative to the FIRST -f
+    # compose file (the project root's docker-compose.yml), NOT relative
+    # to this overlay. That means `.env` and `./data` here refer to the
+    # project root, even though the overlay lives in bot/.
+    env_file: .env
+    environment:
+      # Sensible defaults — override in .env
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - IRC_CHANNEL=${IRC_CHANNEL:-#<name>}
+      - IRC_NICK=${IRC_NICK:-<name>-bot}
+      - PROJECT_NAME=<name>
+      # When dispatched runners execute qa_check.py from inside the bot
+      # container, HOST needs to point at the project service's compose
+      # hostname rather than the bot's own 127.0.0.1. This override is
+      # bot-specific and doesn't leak into the main service's HOST binding.
+      - HOST=<name>
+      # Similarly, the bot needs to reach the per-project Gitea by its
+      # compose service name (not the host-facing 127.0.0.1 URL written
+      # into .env by gitea/bootstrap.sh).
+      - GITEA_URL=http://<name>-gitea:3000
+      - GITEA_API_URL=http://<name>-gitea:3000/api/v1
+      # knowledge-base shared knowledge brain (tools/knowledge-base.py) — set in .env
+      - KNOWLEDGE_BASE_URL=${KNOWLEDGE_BASE_URL:-}
+      - KNOWLEDGE_BASE_TOKEN=${KNOWLEDGE_BASE_TOKEN:-}
+    volumes:
+      # Project mounted writable so dispatch_agent can git-branch and
+      # invoke runners inline. For dry-run use cases (bot only answers
+      # questions, no dispatch), switch to `:ro`.
+      - .:/app
+      # data/ and logs/ are the bot's own writable working area —
+      # heartbeat, agent logs, pre-flight briefs.
+      - ./data:/app/data
+      - ./logs:/app/logs
+    extra_hosts:
+      # Lets the bot reach host-local services (llm-router, vector DB, etc.)
+      # when those services are on the host, not in Docker.
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      # External = pre-existing network created by the operator's IRC
+      # stack. Comment this out if you don't run an IRC server, or edit
+      # the name to match your operator's IRC network.
+      - irc_default
+      # External = pre-existing network where the operator's LLM
+      # container runs. Comment this out if your LLM is on the host.
+      - rag_network
+    mem_limit: 256m
+    cpus: 1
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import os, time, sys; sys.exit(0 if time.time() - os.path.getmtime('/app/data/bot-heartbeat') < 120 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+networks:
+  default:
+  # External = pre-existing network created by the operator's IRC stack.
+  #
+  # `name:` is what maps this alias onto the real network. Without it compose
+  # looks for a network literally called "irc_default" and the whole stack
+  # fails to start with "network irc_default declared as external, but could
+  # not be found" — the alias here is never the real name.
+  #
+  # Override IRC_NETWORK / RAG_NETWORK in .env; find the real names with:
+  #   docker network ls
+  irc_default:
+    external: true
+    name: ${IRC_NETWORK:-irc-server_default}
+  # External = pre-existing network where the LLM container runs.
+  rag_network:
+    external: true
+    name: ${RAG_NETWORK:-production-agentic-rag-course_rag-network}

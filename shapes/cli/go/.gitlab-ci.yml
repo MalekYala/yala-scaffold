@@ -1,0 +1,51 @@
+stages: [test, build]
+
+test:
+  image: golang:1.24-alpine
+  stage: test
+  script:
+    - test -z "$(gofmt -l .)"
+    - go vet ./...
+    - go test ./...
+
+build:
+  image: docker:27
+  services: [docker:27-dind]
+  stage: build
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  script:
+    - docker build --target test --tag "<name>-test:${CI_COMMIT_SHORT_SHA}" .
+    # Go test binaries execute from the temporary build cache, so /tmp cannot be noexec.
+    - docker run --rm --read-only --network none --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,exec,nosuid,nodev,size=512m,mode=1777 "<name>-test:${CI_COMMIT_SHORT_SHA}"
+    - docker build --target runtime --tag "<name>:${CI_COMMIT_SHORT_SHA}" .
+    - docker run --rm --read-only --network none --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m "<name>:${CI_COMMIT_SHORT_SHA}" --demo
+
+# Dependency vulnerabilities, as distinct from committed secrets (which
+# gitleaks covers above). allow_failure so a fresh scaffold is never born red
+# and an advisory published overnight never blocks an unrelated merge —
+# tighten this once you have triaged the initial findings.
+security:audit:
+  stage: security
+  image: $DOCKER_IMAGE
+  services:
+    - name: $DIND_IMAGE
+      alias: docker
+  before_script:
+    - apk add --no-cache make
+  script:
+    - make audit
+  allow_failure: true
+
+# Cheap drift checks: a locale missing a key, or an .env.example that no
+# longer matches the config module. Neither is visible to lint or typecheck,
+# and both are broken deploys waiting to happen. Stdlib-only, so no install.
+lint:drift checks:
+  stage: lint
+  image: python:3.12-slim
+  script:
+    - python3 scripts/check_locales.py
+    - python3 scripts/check_root_clutter.py
+  allow_failure: false
+

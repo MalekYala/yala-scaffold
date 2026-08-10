@@ -1,0 +1,25 @@
+{
+  "$comment": [
+    "A workflow is data: steps in, assertions out.",
+    "",
+    "Note there is no 'sleep' action and never should be. A fixed delay is a bet",
+    "that CI is at least as fast as your laptop, and CI loses that bet. Every",
+    "wait here is for a condition the page can actually reach.",
+    "",
+    "Every workflow MUST contain at least one assert_* step. A run where every",
+    "selector matched nothing and nothing was asserted otherwise reports success."
+  ],
+  "name": "search",
+  "description": "Search the fixture site and verify results render asynchronously",
+  "timeout_ms": 10000,
+  "steps": [
+    { "action": "goto", "url": "/" },
+    { "action": "assert_text", "selector": "#title", "expect": "Fixture site" },
+    { "action": "fill", "selector": "#q", "value": "widget" },
+    { "action": "click", "selector": "#go" },
+    { "action": "wait_for", "selector": "#results", "state": "visible" },
+    { "action": "assert_text", "selector": "#term", "expect": "widget" },
+    { "action": "assert_count", "selector": "#items .item", "expect": 3 },
+    { "action": "assert_text", "selector": "#count", "expect": "3", "exact": true }
+  ]
+}

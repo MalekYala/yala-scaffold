@@ -1,0 +1,27 @@
+services:
+  <name>:
+    build:
+      context: .
+      target: runtime
+      args:
+        APP_UID: "${HOST_UID:-1000}"
+        APP_GID: "${HOST_GID:-1000}"
+        VERSION: "${VERSION:-0.0.0-dev}"
+    image: <name>:latest
+    container_name: <name>
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    init: true
+    stdin_open: true
+    tty: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
+    mem_limit: 128m
+    cpus: 1
+    # No network or published ports are required by the starter TUI.
+    network_mode: none

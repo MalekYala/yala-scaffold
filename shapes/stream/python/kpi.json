@@ -1,0 +1,81 @@
+{
+  "project": "<name>",
+  "shape": "stream",
+  "kpis": [
+    {
+      "name": "health_up",
+      "kpi_type": "boolean",
+      "unit": "bool",
+      "direction": "higher",
+      "target": 1,
+      "interval_s": 60,
+      "source": {
+        "type": "http_status",
+        "url": "http://127.0.0.1:<PORT>/health",
+        "expect_status": 200
+      },
+      "description": "Is the service responding on /health?"
+    },
+    {
+      "name": "qa_score",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": 1.0,
+      "interval_s": 300,
+      "source": {
+        "type": "shell",
+        "cmd": "./metric.sh",
+        "timeout_s": 60
+      },
+      "description": "qa_check.py pass ratio (0.0\u20131.0)"
+    },
+    {
+      "name": "sessions_flowing",
+      "kpi_type": "gauge",
+      "unit": "count",
+      "direction": "higher",
+      "target": 1,
+      "interval_s": 60,
+      "source": {
+        "type": "shell",
+        "cmd": "curl -sf http://127.0.0.1:${PORT:-<PORT>}/stats | python3 -c \"import json,sys;print(sum(1 for s in json.load(sys.stdin)['sessions'].values() if s['flowing']))\" 2>/dev/null || echo 0"
+      },
+      "description": "Sessions actually delivering frames \u2014 as distinct from sessions that merely connected"
+    },
+    {
+      "name": "stalled_sessions",
+      "kpi_type": "gauge",
+      "unit": "count",
+      "direction": "lower",
+      "target": 0,
+      "interval_s": 60,
+      "source": {
+        "type": "shell",
+        "cmd": "curl -sf http://127.0.0.1:${PORT:-<PORT>}/ready | python3 -c \"import json,sys;print(len(json.load(sys.stdin).get('stalled',[])))\" 2>/dev/null || echo 0"
+      },
+      "description": "Sessions connected but no longer delivering. The failure that looks like success."
+    },
+    {
+      "name": "negotiate_p95_ms",
+      "kpi_type": "gauge",
+      "unit": "ms",
+      "direction": "lower",
+      "target": 2000,
+      "interval_s": 300,
+      "source": {
+        "type": "metric_log_grep",
+        "log_file": "logs/app.log",
+        "pattern": "phase=negotiate duration_ms=(\\d+)",
+        "window_s": 3600,
+        "aggregate": "p95"
+      },
+      "description": "Offer-to-answer time. Climbing usually means ICE is waiting on unreachable STUN."
+    }
+  ],
+  "$comment": [
+    "Connection state and delivery are tracked separately on purpose.",
+    "A session can be 'connected' and carrying nothing; measuring only the",
+    "former is how a frozen stream reports perfect health."
+  ]
+}

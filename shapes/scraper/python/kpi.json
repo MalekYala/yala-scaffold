@@ -1,0 +1,46 @@
+{
+  "project": "<name>",
+  "shape": "scraper",
+  "kpis": [
+    {
+      "name": "extraction_health",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": 1.0,
+      "interval_s": 3600,
+      "source": { "type": "shell", "cmd": "./metric.sh", "timeout_s": 60 },
+      "description": "Fraction of extraction checks passing against committed fixtures"
+    },
+    {
+      "name": "records_last_run",
+      "kpi_type": "gauge",
+      "unit": "count",
+      "direction": "higher",
+      "target": 1,
+      "interval_s": 3600,
+      "source": { "type": "shell", "cmd": "wc -l < outputs/records.jsonl 2>/dev/null || echo 0" },
+      "description": "Records extracted in the last run. A sustained drop to zero means the site changed, not that the world got quieter."
+    },
+    {
+      "name": "broken_pages",
+      "kpi_type": "gauge",
+      "unit": "count",
+      "direction": "lower",
+      "target": 0,
+      "interval_s": 3600,
+      "source": { "type": "metric_log_grep", "log_file": "logs/scrape.log", "pattern": "broken_pages=(\\d+)", "window_s": 86400, "aggregate": "max" },
+      "description": "Pages that yielded nothing without saying they were empty — the silent failure"
+    },
+    {
+      "name": "fetch_p95_ms",
+      "kpi_type": "gauge",
+      "unit": "ms",
+      "direction": "lower",
+      "target": 5000,
+      "interval_s": 3600,
+      "source": { "type": "metric_log_grep", "log_file": "logs/scrape.log", "pattern": "phase=fetch duration_ms=(\\d+)", "window_s": 86400, "aggregate": "p95" },
+      "description": "Tail fetch latency. Rising latency often precedes rate limiting."
+    }
+  ]
+}

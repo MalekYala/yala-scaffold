@@ -1,0 +1,214 @@
+# .gitlab-ci.yml — automated pipeline for <name>
+#
+# What this runs on every push / merge request:
+#   1. lint         — static checks (ruff/eslint, optional, non-blocking on scaffold)
+#   2. secret-scan  — gitleaks scans the diff for committed secrets
+#   3. build        — builds the Docker image defined in Dockerfile
+#   4. test         — `docker compose up -d`, runs qa_check.py inside the container,
+#                     runs unit tests if present, tears down on exit
+#
+# Designed to work on:
+#   - self-hosted gitlab-runner with the docker executor
+#   - GitLab.com shared runners
+#   - Anyone cloning this repo to their own GitLab instance
+#
+# Uses docker-in-docker (dind) so it is portable and does not depend on the
+# runner having the host docker socket mounted.
+#
+# To skip a job on a specific commit, prefix the commit message with `[skip ci]`
+# or use `[ci skip]`. See https://docs.gitlab.com/ee/ci/pipelines/#skip-a-pipeline
+
+stages:
+  - lint
+  - secret-scan
+  - build
+  - test
+
+variables:
+  # docker:dind talks over TLS on 2376 by default
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_DRIVER: overlay2
+  # Buildkit makes builds dramatically faster
+  DOCKER_BUILDKIT: "1"
+  COMPOSE_DOCKER_CLI_BUILD: "1"
+  # Pinned image tags — bump deliberately, do not chase `latest`
+  PYTHON_IMAGE: python:3.12-slim
+  DOCKER_IMAGE: docker:27
+  DIND_IMAGE: docker:27-dind
+
+default:
+  # Fail fast on broken runners / transient network errors
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - api_failure
+  # Cap every job so a hung test can't burn the runner
+  timeout: 20 minutes
+
+# ── lint ─────────────────────────────────────────────────────────────────────
+# Static checks. Non-blocking on a fresh scaffold (no code yet); tighten to
+# `allow_failure: false` once you have real source to lint.
+lint:python:
+  stage: lint
+  image: $PYTHON_IMAGE
+  rules:
+    - exists: [pyproject.toml, requirements.txt, "**/*.py"]
+  before_script:
+    - pip install --quiet --no-cache-dir ruff
+  script:
+    - ruff check . || echo "WARN: ruff found issues"
+    - ruff format --check . || echo "WARN: ruff format would rewrite files"
+  allow_failure: true
+
+lint:node:
+  stage: lint
+  image: node:20-alpine
+  rules:
+    - exists: [package.json]
+  before_script:
+    - if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
+  script:
+    - npm run lint --if-present || echo "WARN: no lint script or lint failed"
+  allow_failure: true
+
+# ── secret-scan ──────────────────────────────────────────────────────────────
+# Scans the entire repo history for committed credentials using the same
+# gitleaks rules shipped in .gitleaks.toml. Blocks the pipeline on any hit.
+secret-scan:gitleaks:
+  stage: secret-scan
+  image:
+    name: zricethezav/gitleaks:latest
+    entrypoint: [""]
+  script:
+    - gitleaks detect --source . --config .gitleaks.toml --redact --verbose --no-banner
+  allow_failure: false
+
+# ── build ────────────────────────────────────────────────────────────────────
+# Builds the Docker image. Export as an artifact so the test stage does not
+# have to rebuild from scratch.
+build:docker:
+  stage: build
+  image: $DOCKER_IMAGE
+  services:
+    - name: $DIND_IMAGE
+      alias: docker
+  variables:
+    IMAGE_TAG: "${CI_PROJECT_NAME}:${CI_COMMIT_SHORT_SHA}"
+  before_script:
+    - docker version
+    - docker info
+  script:
+    - echo "Building $IMAGE_TAG"
+    - docker build --pull --tag "$IMAGE_TAG" .
+    - docker save "$IMAGE_TAG" -o image.tar
+    - ls -lh image.tar
+  artifacts:
+    paths:
+      - image.tar
+    expire_in: 1 day
+
+# ── test ─────────────────────────────────────────────────────────────────────
+# End-to-end test: spins up the service via docker compose, runs qa_check.py
+# inside the running container (so it uses 127.0.0.1 internally, per AGENTS.md
+# §2 network security), and tears down on exit.
+test:e2e:
+  stage: test
+  image: $DOCKER_IMAGE
+  services:
+    - name: $DIND_IMAGE
+      alias: docker
+  needs:
+    - job: build:docker
+      artifacts: true
+  variables:
+    IMAGE_TAG: "${CI_PROJECT_NAME}:${CI_COMMIT_SHORT_SHA}"
+  before_script:
+    - apk add --no-cache docker-compose python3 py3-pip curl
+    - docker load -i image.tar
+    - docker images
+    # Materialize .env from .env.example so compose has defaults
+    - cp .env.example .env
+  script:
+    - echo "Starting service…"
+    - docker compose up -d
+    - echo "Waiting for /health to respond…"
+    - |
+      for i in $(seq 1 30); do
+        if docker compose exec -T <name> curl -sf http://127.0.0.1:<PORT>/health > /dev/null 2>&1; then
+          echo "service is up after ${i}s"
+          break
+        fi
+        sleep 1
+        if [ "$i" = "30" ]; then
+          echo "service did not become healthy within 30s"
+          docker compose logs
+          exit 1
+        fi
+      done
+    - echo "Running qa_check.py inside the service container…"
+    - docker compose exec -T <name> python3 /app/qa_check.py
+    - echo "Running unit tests (if present)…"
+    - |
+      # Only run pytest if the tests/ directory has real test files AND pytest
+      # is importable inside the container. Scaffolded projects ship an empty
+      # tests/ dir with just __init__.py — that should not fail the pipeline.
+      if [ -d tests ] && ls tests/test_*.py tests/*_test.py 2>/dev/null | grep -q .; then
+        if docker compose exec -T <name> python3 -c "import pytest" 2>/dev/null; then
+          docker compose exec -T <name> python3 -m pytest -q /app/tests || exit 1
+        else
+          echo "WARN: tests/ has test files but pytest is not installed in the image."
+          echo "Add 'pytest' to requirements.txt to run them."
+          exit 1
+        fi
+      else
+        echo "(no test files in tests/ — skipping pytest)"
+      fi
+  after_script:
+    - docker compose logs --tail 200 || true
+    - docker compose down --volumes --remove-orphans || true
+  artifacts:
+    when: always
+    paths:
+      - qa_check_output.txt
+    expire_in: 1 week
+
+# ── test:standalone ──────────────────────────────────────────────────────────
+# Runs qa_check.py against the service from the job container itself. Uses the
+# `docker` service alias so http://docker:<PORT> reaches the dind network. This
+# is a fallback path for runners where `docker compose exec` is unreliable.
+# Disabled by default — enable by setting the CI variable RUN_STANDALONE=1.
+test:standalone:
+  stage: test
+  image: $PYTHON_IMAGE
+  services:
+    - name: $DIND_IMAGE
+      alias: docker
+  needs:
+    - job: build:docker
+      artifacts: true
+  rules:
+    - if: '$RUN_STANDALONE == "1"'
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+  before_script:
+    - pip install --quiet --no-cache-dir httpx
+    - apt-get update -qq && apt-get install -qq -y --no-install-recommends docker.io curl
+    - docker load -i image.tar
+    - cp .env.example .env
+    - docker compose up -d
+  script:
+    - |
+      for i in $(seq 1 30); do
+        if curl -sf http://docker:<PORT>/health > /dev/null 2>&1; then
+          echo "service reachable after ${i}s"; break
+        fi
+        sleep 1
+      done
+    - HOST=docker PORT=<PORT> python3 qa_check.py
+  after_script:
+    - docker compose logs --tail 200 || true
+    - docker compose down --volumes --remove-orphans || true
+  allow_failure: true

@@ -1,0 +1,8 @@
+# aiortc is pure Python; its native deps (av, pylibsrtp, cryptography) ship
+# wheels for x86_64 and aarch64 alike, so this shape builds without a compiler
+# on both.
+aiortc==1.15.0
+av==17.1.0
+numpy==2.2.6
+fastapi==0.141.1
+uvicorn==0.52.1

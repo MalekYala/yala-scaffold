@@ -1,0 +1,121 @@
+# Compose overlay for <name>'s private Gitea instance.
+#
+# Merge with the main compose file to bring up a per-project git server:
+#     docker compose -f docker-compose.yml -f gitea/docker-compose.gitea.yml up -d
+#
+# Or via the Makefile:
+#     make gitea               # start gitea
+#     make gitea-bootstrap     # first-run: create admin, bot user, token, repo
+#     make gitea-logs          # follow gitea logs
+#     make gitea-down          # stop gitea
+#
+# The bot needs Gitea running to push dispatched sub-agent branches and open
+# PRs. Start it explicitly with `make gitea` before enabling those bot tools.
+#
+# Runs on SQLite — no separate database container needed. Stores everything
+# under gitea/data/ which is gitignored.
+
+services:
+  <name>-gitea:
+    image: gitea/gitea:1.22
+    container_name: <name>-gitea
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    environment:
+      # Skip the interactive install wizard — app.ini is pre-configured
+      - USER_UID=${HOST_UID:-1000}
+      - USER_GID=${HOST_GID:-1000}
+      - GITEA__database__DB_TYPE=sqlite3
+      - GITEA__database__PATH=/data/gitea/gitea.db
+      # When GITEA_PUBLIC_URL is set (via central Caddy exposure), it
+      # becomes Gitea's ROOT_URL so clone URLs, web links, and webhook
+      # payloads point at the public address instead of localhost. See
+      # AGENTS.md §24 for the `<slug>-git.<zone>` convention and
+      # gitea/caddy.example for the Caddyfile snippet.
+      - GITEA__server__DOMAIN=${GITEA_PUBLIC_DOMAIN:-127.0.0.1}
+      - GITEA__server__ROOT_URL=${GITEA_PUBLIC_URL:-http://127.0.0.1:${GITEA_HTTP_PORT:-3030}/}
+      - GITEA__server__HTTP_PORT=3000
+      - GITEA__server__SSH_DOMAIN=127.0.0.1
+      - GITEA__server__SSH_PORT=${GITEA_SSH_PORT:-2230}
+      # Use the base image's OpenSSH daemon (port 22 inside the container)
+      # rather than Gitea's built-in Go SSH server — they collide on port 22.
+      # The dispatch-agent / bot workflow uses HTTPS with the API token, so
+      # SSH git access is only needed if an operator wants to `git clone`
+      # from the per-project Gitea over SSH.
+      - GITEA__server__START_SSH_SERVER=false
+      - GITEA__server__DISABLE_SSH=false
+      - GITEA__server__OFFLINE_MODE=true
+      - GITEA__actions__ENABLED=true
+      - GITEA__service__DISABLE_REGISTRATION=true
+      # Require authentication for the web UI and repository browsing.
+      # Health checks use /api/healthz, which does not expose repository data.
+      - GITEA__service__REQUIRE_SIGNIN_VIEW=true
+      - GITEA__security__INSTALL_LOCK=true
+      - GITEA__security__SECRET_KEY=${GITEA_SECRET_KEY:-}
+      - GITEA__security__INTERNAL_TOKEN=${GITEA_INTERNAL_TOKEN:-}
+      - GITEA__log__LEVEL=Info
+      - GITEA__log__ROOT_PATH=/data/gitea/log
+      - GITEA__openid__ENABLE_OPENID_SIGNIN=false
+      - GITEA__openid__ENABLE_OPENID_SIGNUP=false
+    ports:
+      # Localhost-only — operators handle external access via their reverse proxy
+      - "127.0.0.1:${GITEA_HTTP_PORT:-3030}:3000"
+      # SSH port only exposed if you want `git clone ssh://...` from the host.
+      # Default 2230 (not 2222 — that commonly collides with GitLab/vagrant).
+      - "127.0.0.1:${GITEA_SSH_PORT:-2230}:22"
+    volumes:
+      - ./gitea/data:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    mem_limit: 1g
+    cpus: 1
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── Gitea Actions runner ────────────────────────────────────────────────
+  # Executes .gitea/workflows/*.yml on every push and pull_request. Needs a
+  # runner token — gitea/bootstrap.sh generates it on first run and writes
+  # GITEA_RUNNER_TOKEN to .env. Enable this trusted profile explicitly with:
+  #     make gitea-runner
+  <name>-act-runner:
+    # Opt-in because access to the host Docker socket is equivalent to host
+    # administrative access. Core project workflows never enable this profile.
+    profiles:
+      - ci-runner
+    image: gitea/act_runner:latest
+    container_name: <name>-act-runner
+    restart: unless-stopped
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    depends_on:
+      <name>-gitea:
+        condition: service_healthy
+    environment:
+      - GITEA_INSTANCE_URL=http://<name>-gitea:3000
+      - GITEA_RUNNER_REGISTRATION_TOKEN=${GITEA_RUNNER_TOKEN:-}
+      - GITEA_RUNNER_NAME=${GITEA_RUNNER_NAME:-<name>-runner}
+      - GITEA_RUNNER_LABELS=ubuntu-latest:docker://catthehacker/ubuntu:act-latest,ubuntu-22.04:docker://catthehacker/ubuntu:act-22.04
+      # runner-config.yaml sets `container.network` to the compose network so
+      # per-job containers spawned by act_runner can reach <name>-gitea by
+      # service name. Without this, `actions/checkout@v4` fails with
+      # "Could not resolve host: <name>-gitea".
+      - CONFIG_FILE=/config/runner-config.yaml
+    volumes:
+      - ./gitea/runner-data:/data
+      - ./gitea/runner-config.yaml:/config/runner-config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    mem_limit: 2g
+    cpus: 2
+    # Runner won't start until GITEA_RUNNER_TOKEN is set in .env; see
+    # gitea/bootstrap.sh step 4a.

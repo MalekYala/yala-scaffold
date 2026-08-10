@@ -1,0 +1,7 @@
+# Runtime dependencies for the LIGHT image — dataset tooling, evaluation and
+# the QA gate. Deliberately no torch: everything except training runs on any
+# machine, in seconds, with no GPU and no multi-gigabyte image.
+#
+# Training dependencies live in requirements-train.txt and are installed only
+# into the `train` image.
+httpx==0.28.1

@@ -1,0 +1,10 @@
+# The kit itself has no runtime state. These are only ever created by someone
+# testing a scaffold from inside the repo directory.
+*.pyc
+__pycache__/
+.venv/
+.DS_Store
+
+# Throwaway projects created while testing the kit
+/tmp-*/
+/demo-*/

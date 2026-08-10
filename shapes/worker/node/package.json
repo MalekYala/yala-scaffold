@@ -1,0 +1,23 @@
+{
+  "name": "<name>",
+  "version": "0.1.0",
+  "description": "TODO: describe <name>",
+  "type": "module",
+  "main": "src/worker.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/worker.js",
+    "test": "node --test tests/tick.test.js",
+    "typecheck": "node --check src/worker.js && node --check qa_check.js",
+    "qa": "node qa_check.js",
+    "lint": "eslint src/ qa_check.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "eslint": "^9.9.0"
+  }
+}

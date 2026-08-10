@@ -1,0 +1,74 @@
+{
+  "project": "<name>",
+  "shape": "analysis",
+  "kpis": [
+    {
+      "name": "last_run_success",
+      "kpi_type": "boolean",
+      "unit": "bool",
+      "direction": "higher",
+      "target": 1,
+      "interval_s": 300,
+      "source": {
+        "type": "shell",
+        "cmd": "test -f results/metrics.json && python3 -c \"import json; print(1 if json.load(open('results/metrics.json')).get('success') else 0)\" || echo 0"
+      },
+      "description": "Did the most recent analyze.py run finish successfully?"
+    },
+    {
+      "name": "output_freshness_s",
+      "kpi_type": "gauge",
+      "unit": "seconds",
+      "direction": "lower",
+      "target": 86400,
+      "interval_s": 300,
+      "source": {
+        "type": "shell",
+        "cmd": "python3 -c \"import os, time; print(int(time.time() - os.path.getmtime('results/metrics.json')))\" 2>/dev/null || echo 999999"
+      },
+      "description": "Seconds since the last successful analysis run"
+    },
+    {
+      "name": "row_count",
+      "kpi_type": "gauge",
+      "unit": "rows",
+      "direction": "higher",
+      "interval_s": 300,
+      "source": {
+        "type": "http_json",
+        "url": "file:///app/results/metrics.json",
+        "field": "row_count"
+      },
+      "description": "Rows processed in the most recent run. Replace the http_json with a shell source reading results/metrics.json if file:// URLs aren't supported by your collector."
+    },
+    {
+      "name": "run_duration_ms",
+      "kpi_type": "gauge",
+      "unit": "ms",
+      "direction": "lower",
+      "interval_s": 300,
+      "source": {
+        "type": "metric_log_grep",
+        "log_file": "logs/analyze.log",
+        "pattern": "phase=total duration_ms=(\\d+)",
+        "window_s": 86400,
+        "aggregate": "max"
+      },
+      "description": "Most recent analysis run duration in ms"
+    },
+    {
+      "name": "qa_score",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": 1.0,
+      "interval_s": 300,
+      "source": {
+        "type": "shell",
+        "cmd": "./metric.sh",
+        "timeout_s": 60
+      },
+      "description": "qa_check.py pass ratio"
+    }
+  ]
+}

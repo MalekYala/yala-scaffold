@@ -1,0 +1,41 @@
+<!doctype html>
+<!--
+  Fixture site for <name>'s workflows.
+
+  Committed and served locally so the whole automation path — launch, navigate,
+  interact, wait, assert — is exercisable with no external site. A browser suite
+  pointed at the real internet fails for reasons unrelated to your code (an
+  outage, a rate limit, a redesign) and passes at exactly the moment the site
+  changes underneath you.
+
+  It deliberately includes the things that make automation hard: content that
+  appears asynchronously, a login gate, and a slow page.
+-->
+<html lang="en"><head><meta charset="utf-8"><title>Fixture — home</title></head>
+<body>
+  <h1 id="title">Fixture site</h1>
+  <nav><a id="to-login" href="/login.html">Sign in</a></nav>
+  <form id="search">
+    <input id="q" name="q" placeholder="search">
+    <button id="go" type="button">Search</button>
+  </form>
+  <!-- Results appear only after a delay: a workflow that sleeps a fixed
+       amount instead of waiting for this will be flaky by construction. -->
+  <div id="results" hidden>
+    <span id="count">0</span> result(s) for <span id="term"></span>
+    <ul id="items"></ul>
+  </div>
+<script>
+document.querySelector('#go').addEventListener('click', () => {
+  const term = document.querySelector('#q').value.trim();
+  setTimeout(() => {
+    const items = term ? [term + ' alpha', term + ' beta', term + ' gamma'] : [];
+    document.querySelector('#term').textContent = term;
+    document.querySelector('#count').textContent = items.length;
+    document.querySelector('#items').innerHTML =
+      items.map((t) => '<li class="item">' + t + '</li>').join('');
+    document.querySelector('#results').hidden = false;
+  }, 350);
+});
+</script>
+</body></html>

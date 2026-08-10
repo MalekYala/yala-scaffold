@@ -1,0 +1,87 @@
+{
+  "project": "<name>",
+  "shape": "audio",
+  "kpis": [
+    {
+      "name": "health_up",
+      "kpi_type": "boolean",
+      "unit": "bool",
+      "direction": "higher",
+      "target": 1,
+      "interval_s": 60,
+      "source": {
+        "type": "http_status",
+        "url": "http://127.0.0.1:<PORT>/health",
+        "expect_status": 200
+      },
+      "description": "Is the service responding on /health?"
+    },
+    {
+      "name": "qa_score",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": 1.0,
+      "interval_s": 300,
+      "source": {
+        "type": "shell",
+        "cmd": "./metric.sh",
+        "timeout_s": 60
+      },
+      "description": "qa_check.py pass ratio (0.0\u20131.0)"
+    },
+    {
+      "name": "output_rms",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": 0.01,
+      "interval_s": 300,
+      "source": {
+        "type": "metric_log_grep",
+        "log_file": "logs/app.log",
+        "pattern": "rms=([0-9.]+)",
+        "window_s": 3600,
+        "aggregate": "min"
+      },
+      "description": "Quietest clip generated recently. Falling toward zero means the engine is producing silence."
+    },
+    {
+      "name": "unusable_audio_rejected",
+      "kpi_type": "gauge",
+      "unit": "count",
+      "direction": "lower",
+      "target": 0,
+      "interval_s": 3600,
+      "source": {
+        "type": "metric_log_grep",
+        "log_file": "logs/app.log",
+        "pattern": "refusing to return unusable audio",
+        "window_s": 86400,
+        "aggregate": "count"
+      },
+      "description": "Times the service caught its own engine producing silence or noise. Non-zero means the engine is failing on real inputs."
+    },
+    {
+      "name": "synthesis_p95_ms",
+      "kpi_type": "gauge",
+      "unit": "ms",
+      "direction": "lower",
+      "target": 2000,
+      "interval_s": 300,
+      "source": {
+        "type": "metric_log_grep",
+        "log_file": "logs/app.log",
+        "pattern": "phase=synthesize duration_ms=(\\d+)",
+        "window_s": 3600,
+        "aggregate": "p95"
+      },
+      "description": "Tail synthesis latency"
+    }
+  ],
+  "$comment": [
+    "Loudness is tracked as a KPI, not just a test. An engine that starts",
+    "returning silence keeps every status metric green \u2014 request rate,",
+    "latency and error rate all look perfect while nobody can hear anything."
+  ]
+}

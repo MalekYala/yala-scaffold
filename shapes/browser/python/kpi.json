@@ -1,0 +1,52 @@
+{
+  "project": "<name>",
+  "shape": "browser",
+  "kpis": [
+    {
+      "name": "workflows_passing",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": 1.0,
+      "interval_s": 3600,
+      "source": {
+        "type": "shell",
+        "cmd": "./metric.sh",
+        "timeout_s": 300
+      },
+      "description": "Fraction of contract checks passing, including the flake detector"
+    },
+    {
+      "name": "flaky_runs",
+      "kpi_type": "gauge",
+      "unit": "count",
+      "direction": "lower",
+      "target": 0,
+      "interval_s": 86400,
+      "source": {
+        "type": "metric_log_grep",
+        "log_file": "logs/run.log",
+        "pattern": "failed=([1-9]\\d*)",
+        "window_s": 86400,
+        "aggregate": "count"
+      },
+      "description": "Runs that failed. For browser automation the same input failing intermittently is the defining problem, not an edge case."
+    },
+    {
+      "name": "slowest_step_ms",
+      "kpi_type": "gauge",
+      "unit": "ms",
+      "direction": "lower",
+      "target": 5000,
+      "interval_s": 3600,
+      "source": {
+        "type": "metric_log_grep",
+        "log_file": "logs/run.log",
+        "pattern": "phase=step duration_ms=(\\d+)",
+        "window_s": 86400,
+        "aggregate": "max"
+      },
+      "description": "Slowest single step. A step creeping toward its timeout is a flake that has not happened yet."
+    }
+  ]
+}

@@ -1,0 +1,126 @@
+# .gitlab-ci.yml — automated pipeline for <name> (shape: analysis)
+#
+# test:run-and-verify runs analyze.py end-to-end against fixtures (no external
+# data needed), then runs qa_check.py to assert the expected outputs landed.
+# The outputs/ directory is captured as a pipeline artifact so you can download
+# the generated PDFs/graphs/summary from the GitLab job page.
+
+stages:
+  - lint
+  - secret-scan
+  - security
+  - build
+  - test
+
+variables:
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_DRIVER: overlay2
+  DOCKER_BUILDKIT: "1"
+  COMPOSE_DOCKER_CLI_BUILD: "1"
+  PYTHON_IMAGE: python:3.12-slim
+  DOCKER_IMAGE: docker:27
+  DIND_IMAGE: docker:27-dind
+
+default:
+  retry:
+    max: 2
+    when: [runner_system_failure, stuck_or_timeout_failure, api_failure]
+  timeout: 30 minutes
+
+lint:python:
+  stage: lint
+  image: $PYTHON_IMAGE
+  rules:
+    - exists: ["**/*.py"]
+  before_script:
+    - pip install --quiet --no-cache-dir ruff
+  script:
+    - ruff check . || echo "WARN: ruff found issues"
+  allow_failure: true
+
+# Cheap drift checks: a locale missing a key, or an .env.example that no
+# longer matches the config module. Neither is visible to lint or typecheck,
+# and both are broken deploys waiting to happen. Stdlib-only, so no install.
+lint:drift checks:
+  stage: lint
+  image: python:3.12-slim
+  script:
+    - python3 scripts/check_locales.py
+    - python3 scripts/check_root_clutter.py
+  allow_failure: false
+
+secret-scan:gitleaks:
+  stage: secret-scan
+  image:
+    name: zricethezav/gitleaks:latest
+    entrypoint: [""]
+  script:
+    - gitleaks detect --source . --config .gitleaks.toml --redact --verbose --no-banner
+
+# Dependency vulnerabilities, as distinct from committed secrets (which
+# gitleaks covers above). allow_failure so a fresh scaffold is never born red
+# and an advisory published overnight never blocks an unrelated merge —
+# tighten this once you have triaged the initial findings.
+security:audit:
+  stage: security
+  image: $DOCKER_IMAGE
+  services:
+    - name: $DIND_IMAGE
+      alias: docker
+  before_script:
+    - apk add --no-cache make
+  script:
+    - make audit
+  allow_failure: true
+
+build:docker:
+  stage: build
+  image: $DOCKER_IMAGE
+  services:
+    - name: $DIND_IMAGE
+      alias: docker
+  variables:
+    IMAGE_TAG: "${CI_PROJECT_NAME}:${CI_COMMIT_SHORT_SHA}"
+  script:
+    - docker build --pull --tag "$IMAGE_TAG" .
+    - docker save "$IMAGE_TAG" -o image.tar
+  artifacts:
+    paths:
+      - image.tar
+    expire_in: 1 day
+
+test:run-and-verify:
+  stage: test
+  image: $DOCKER_IMAGE
+  services:
+    - name: $DIND_IMAGE
+      alias: docker
+  needs:
+    - job: build:docker
+      artifacts: true
+  variables:
+    IMAGE_TAG: "${CI_PROJECT_NAME}:${CI_COMMIT_SHORT_SHA}"
+  before_script:
+    - apk add --no-cache docker-compose python3 py3-pip
+    - docker load -i image.tar
+    - cp .env.example .env
+    - mkdir -p outputs results
+  script:
+    - echo "Running analysis against fixtures/…"
+    - docker run --rm -v "$PWD/fixtures:/app/fixtures:ro" -v "$PWD/outputs:/app/outputs" -v "$PWD/results:/app/results" --env-file .env "$IMAGE_TAG"
+    - echo "Verifying expected outputs landed…"
+    - test -f results/metrics.json || { echo "MISSING: results/metrics.json (analyze.py did not complete)"; exit 1; }
+    - test -f outputs/summary.json || { echo "MISSING: outputs/summary.json"; exit 1; }
+    - test -f outputs/report.md || { echo "MISSING: outputs/report.md"; exit 1; }
+    - python3 -c "import json; d=json.load(open('results/metrics.json')); assert d.get('success'), d"
+    - echo "Running qa_check.py against produced outputs…"
+    - python3 -m pip install --quiet httpx python-dotenv
+    - python3 qa_check.py
+  artifacts:
+    when: always
+    name: "$CI_PROJECT_NAME-$CI_COMMIT_SHORT_SHA-outputs"
+    paths:
+      - outputs/
+      - results/
+    expire_in: 2 weeks

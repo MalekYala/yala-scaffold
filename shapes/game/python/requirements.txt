@@ -1,0 +1,3 @@
+# The game itself needs no Python packages — Godot is the runtime, and it ships
+# in the image. This file exists so the shape matches every other Python shape's
+# build layout, and so anything you add around the game has somewhere to go.

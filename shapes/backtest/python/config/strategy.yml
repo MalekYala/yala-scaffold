@@ -1,0 +1,27 @@
+# Strategy parameters for <name>.
+#
+# autoresearch iterates on this file — keep it small and well-commented. Each
+# parameter should have a sensible range so the iteration loop can vary it
+# safely without generating nonsense values.
+
+strategy:
+  name: sma_crossover
+  # Short moving average window (days). Range: 5–100.
+  short_window: 20
+  # Long moving average window (days). Must be > short_window. Range: 50–500.
+  long_window: 50
+  # Position sizing: fraction of equity per trade. Range: 0.01–1.0.
+  position_size: 0.1
+  # Stop loss as percent drawdown from entry. Range: 0.005–0.20.
+  stop_loss: 0.05
+
+backtest:
+  # Symbols to run against. Keep tiny for fixtures; expand for real runs.
+  symbols: [SPY]
+  # Start and end of the backtest period (inclusive).
+  start: "2020-01-01"
+  end: "2023-12-31"
+  # Flat per-trade cost in basis points (slippage + commission).
+  cost_bps: 5
+  # Initial capital in USD.
+  initial_capital: 100000

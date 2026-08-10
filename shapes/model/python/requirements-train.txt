@@ -1,0 +1,17 @@
+# Training-only dependencies. Installed into the `train` image, which is built
+# on demand by `make train` — never as part of `make setup`.
+#
+# These are large (torch alone is multi-gigabyte) and CUDA-specific, which is
+# exactly why they are quarantined here: keeping them out of the default image
+# is what lets setup/test/lint/qa work on a laptop with no GPU.
+#
+# Pinned, because a fine-tune that cannot be reproduced is an anecdote. Bump
+# deliberately and re-run the eval gate afterwards.
+torch==2.5.1
+transformers==4.46.3
+datasets==3.1.0
+peft==0.13.2
+trl==0.12.1
+accelerate==1.1.1
+safetensors==0.4.5
+sentencepiece==0.2.0

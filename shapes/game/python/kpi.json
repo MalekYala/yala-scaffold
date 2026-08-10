@@ -1,0 +1,32 @@
+{
+  "project": "<name>",
+  "shape": "game",
+  "$comment": [
+    "Determinism is tracked as a KPI, not just a test. It degrades silently —",
+    "the game keeps running, replays and netcode just stop agreeing — and by",
+    "the time a player reports it the cause is many commits back."
+  ],
+  "kpis": [
+    {
+      "name": "contract_score",
+      "kpi_type": "float", "unit": "ratio", "direction": "higher", "target": 1.0,
+      "interval_s": 3600,
+      "source": { "type": "shell", "cmd": "./metric.sh", "timeout_s": 300 },
+      "description": "Headless checks passing: scenes, references, scripts, determinism, budget"
+    },
+    {
+      "name": "sim_ms_per_tick",
+      "kpi_type": "gauge", "unit": "ms", "direction": "lower", "target": 4.0,
+      "interval_s": 3600,
+      "source": { "type": "shell", "cmd": "python3 -c \"import json,subprocess;print(json.loads([l for l in subprocess.run(['python3','qa_check.py'],capture_output=True,text=True).stdout.splitlines() if l.strip().startswith('{')][-1])['per_tick_ms'])\" 2>/dev/null || echo 999" },
+      "description": "Simulation cost per fixed tick, before any rendering. The budget rendering has to fit inside."
+    },
+    {
+      "name": "deterministic",
+      "kpi_type": "boolean", "unit": "bool", "direction": "higher", "target": 1,
+      "interval_s": 3600,
+      "source": { "type": "shell", "cmd": "python3 -c \"import json,subprocess;d=json.loads([l for l in subprocess.run(['python3','qa_check.py'],capture_output=True,text=True).stdout.splitlines() if l.strip().startswith('{')][-1]);print(1 if all(c['ok'] for c in d['checks'] if c['name']=='deterministic') else 0)\" 2>/dev/null || echo 0" },
+      "description": "Does the same seed still produce the same game? Replays, netcode and saves all depend on it."
+    }
+  ]
+}

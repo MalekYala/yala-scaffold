@@ -1,0 +1,19 @@
+# Development-only dependencies (not shipped in production images).
+#
+# Install with:
+#     pip install -r requirements.txt -r requirements-dev.txt
+#
+# CI's lint and typecheck stages install this file directly.
+# pre-commit hooks pin their own versions, so this file is mostly for
+# ad-hoc invocation like `mypy .` or `ruff check .` from the command line.
+
+pytest==9.1.1
+pytest-asyncio==1.4.0
+ruff==0.16.2
+mypy==2.3.0
+pre-commit==4.6.1
+
+# py-spy — sampling profiler for investigating "correct but slow" code.
+# Manual tool, not run in CI. See Makefile `make profile` target and
+# docs/ARCHITECTURE.md § "Profiling with py-spy".
+py-spy==0.4.2

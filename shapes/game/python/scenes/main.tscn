@@ -1,0 +1,15 @@
+[gd_scene load_steps=2 format=3 uid="uid://bgamemain0001"]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_main")
+
+[node name="Arena" type="Node2D" parent="."]
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="Score" type="Label" parent="HUD"]
+offset_right = 200.0
+offset_bottom = 32.0
+text = "score: 0"

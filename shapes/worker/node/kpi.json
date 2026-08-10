@@ -1,0 +1,81 @@
+{
+  "project": "<name>",
+  "shape": "worker",
+  "lang": "node",
+  "kpis": [
+    {
+      "name": "heartbeat_fresh",
+      "kpi_type": "boolean",
+      "unit": "bool",
+      "direction": "higher",
+      "target": 1,
+      "interval_s": 60,
+      "source": {
+        "type": "shell",
+        "cmd": "node -e \"const fs=require('fs'); try { const age=(Date.now()-fs.statSync('data/heartbeat').mtimeMs)/1000; console.log(age<60?1:0); } catch { console.log(0); }\""
+      },
+      "description": "Worker heartbeat file modified within last 60s"
+    },
+    {
+      "name": "jobs_completed_per_min",
+      "kpi_type": "gauge",
+      "unit": "jobs/min",
+      "direction": "higher",
+      "interval_s": 60,
+      "source": {
+        "type": "metric_log_grep",
+        "log_file": "logs/worker.log",
+        "pattern": "phase=process .*status=ok",
+        "window_s": 60,
+        "aggregate": "count"
+      },
+      "description": "Successful job completions per minute"
+    },
+    {
+      "name": "job_error_rate",
+      "kpi_type": "gauge",
+      "unit": "errors/min",
+      "direction": "lower",
+      "target": 0,
+      "interval_s": 60,
+      "source": {
+        "type": "metric_log_grep",
+        "log_file": "logs/worker.log",
+        "pattern": "phase=process .*status=fail",
+        "window_s": 60,
+        "aggregate": "count"
+      },
+      "description": "Failed job count per minute"
+    },
+    {
+      "name": "p99_job_duration_ms",
+      "kpi_type": "gauge",
+      "unit": "ms",
+      "direction": "lower",
+      "target": 5000,
+      "interval_s": 60,
+      "source": {
+        "type": "metric_log_grep",
+        "log_file": "logs/worker.log",
+        "pattern": "phase=process duration_ms=(\\d+)",
+        "window_s": 300,
+        "aggregate": "p99"
+      },
+      "description": "p99 job processing latency over last 5 minutes"
+    },
+    {
+      "name": "qa_score",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": 1.0,
+      "interval_s": 300,
+      "source": {
+        "type": "shell",
+        "cmd": "./metric.sh",
+        "timeout_s": 60
+      },
+      "description": "qa_check.js pass ratio (0.0–1.0)"
+    }
+  ]
+}

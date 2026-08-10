@@ -1,0 +1,187 @@
+# .gitlab-ci.yml — automated pipeline for <name> (shape: webapp, lang: node)
+#
+# The test stage builds the multi-stage Docker image (which runs the Vite
+# build inside), starts the container, waits for /health, runs qa_check.js
+# (which also verifies the brand config + locales), and uploads dist/ as a
+# pipeline artifact so you can download the built frontend from GitLab.
+
+stages:
+  - lint
+  - secret-scan
+  - security
+  - build
+  - test
+
+variables:
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_DRIVER: overlay2
+  DOCKER_BUILDKIT: "1"
+  COMPOSE_DOCKER_CLI_BUILD: "1"
+  NODE_IMAGE: node:20-alpine
+  DOCKER_IMAGE: docker:27
+  DIND_IMAGE: docker:27-dind
+
+default:
+  retry:
+    max: 2
+    when: [runner_system_failure, stuck_or_timeout_failure, api_failure]
+  timeout: 30 minutes
+
+lint:node:
+  stage: lint
+  image: $NODE_IMAGE
+  rules:
+    - exists: [package.json]
+  before_script:
+    - if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
+  script:
+    - npm run lint --if-present || echo "WARN: lint not configured or failed"
+  allow_failure: true
+
+# Cheap drift checks: a locale missing a key, or an .env.example that no
+# longer matches the config module. Neither is visible to lint or typecheck,
+# and both are broken deploys waiting to happen. Stdlib-only, so no install.
+lint:drift checks:
+  stage: lint
+  image: python:3.12-slim
+  script:
+    - python3 scripts/check_locales.py
+    - python3 scripts/check_root_clutter.py
+  allow_failure: false
+
+secret-scan:gitleaks:
+  stage: secret-scan
+  image:
+    name: zricethezav/gitleaks:latest
+    entrypoint: [""]
+  script:
+    - gitleaks detect --source . --config .gitleaks.toml --redact --verbose --no-banner
+
+# Locale + brand consistency check — runs standalone (no Docker needed)
+check:i18n:
+  stage: lint
+  image: $NODE_IMAGE
+  rules:
+    - exists: [locales/en.json]
+  script:
+    - |
+      node -e "
+        const fs = require('fs');
+        const en = JSON.parse(fs.readFileSync('locales/en.json', 'utf8'));
+        const enKeys = new Set();
+        const walk = (obj, prefix='') => {
+          for (const k in obj) {
+            const full = prefix ? prefix + '.' + k : k;
+            if (typeof obj[k] === 'object' && obj[k] !== null) walk(obj[k], full);
+            else enKeys.add(full);
+          }
+        };
+        walk(en);
+        console.log('en.json has', enKeys.size, 'translation keys');
+        let hadMissing = false;
+        for (const file of fs.readdirSync('locales')) {
+          if (!file.endsWith('.json') || file === 'en.json') continue;
+          const other = JSON.parse(fs.readFileSync('locales/' + file, 'utf8'));
+          const otherKeys = new Set();
+          walk(other);
+          otherKeys.forEach((k) => otherKeys.add(k));
+          const missing = [...enKeys].filter((k) => !otherKeys.has(k));
+          const stale = [...otherKeys].filter((k) => !enKeys.has(k));
+          if (missing.length) {
+            console.log('WARN: ' + file + ' missing ' + missing.length + ' keys: ' + missing.slice(0, 5).join(', '));
+            hadMissing = true;
+          }
+          if (stale.length) {
+            console.log('WARN: ' + file + ' has ' + stale.length + ' stale keys (not in en.json): ' + stale.slice(0, 5).join(', '));
+          }
+        }
+        // Translation drift is a warning, not a failure — it's normal during
+        // feature development. Use scripts/translate_docs.sh to catch up.
+      "
+    - echo "Checking brand/config.json is valid JSON with required fields…"
+    - |
+      node -e "
+        const b = JSON.parse(require('fs').readFileSync('brand/config.json', 'utf8'));
+        const required = ['name', 'display_name', 'colors', 'fonts', 'logo'];
+        const missing = required.filter(k => !(k in b));
+        if (missing.length) { console.error('brand/config.json missing:', missing); process.exit(1); }
+        console.log('brand/config.json ok — display_name:', b.display_name);
+      "
+  allow_failure: false
+
+# Dependency vulnerabilities, as distinct from committed secrets (which
+# gitleaks covers above). allow_failure so a fresh scaffold is never born red
+# and an advisory published overnight never blocks an unrelated merge —
+# tighten this once you have triaged the initial findings.
+security:audit:
+  stage: security
+  image: $DOCKER_IMAGE
+  services:
+    - name: $DIND_IMAGE
+      alias: docker
+  before_script:
+    - apk add --no-cache make
+  script:
+    - make audit
+  allow_failure: true
+
+build:docker:
+  stage: build
+  image: $DOCKER_IMAGE
+  services:
+    - name: $DIND_IMAGE
+      alias: docker
+  variables:
+    IMAGE_TAG: "${CI_PROJECT_NAME}:${CI_COMMIT_SHORT_SHA}"
+  script:
+    - docker build --pull --target test --tag "${IMAGE_TAG}-test" .
+    - docker run --rm --init --read-only --network none --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m "${IMAGE_TAG}-test"
+    - docker build --pull --tag "$IMAGE_TAG" .
+    - docker save "$IMAGE_TAG" -o image.tar
+    # Extract dist/ from the builder stage for artifact upload
+    - docker build --target builder --tag "${IMAGE_TAG}-builder" .
+    - docker create --name extract "${IMAGE_TAG}-builder"
+    - docker cp extract:/build/dist ./dist || true
+    - docker rm extract
+  artifacts:
+    paths:
+      - image.tar
+      - dist/
+    expire_in: 1 week
+
+test:e2e:
+  stage: test
+  image: $DOCKER_IMAGE
+  services:
+    - name: $DIND_IMAGE
+      alias: docker
+  needs:
+    - job: build:docker
+      artifacts: true
+  variables:
+    IMAGE_TAG: "${CI_PROJECT_NAME}:${CI_COMMIT_SHORT_SHA}"
+  before_script:
+    - apk add --no-cache docker-compose curl
+    - docker load -i image.tar
+    - cp .env.example .env
+  script:
+    - docker compose up -d
+    - |
+      echo "Waiting for /health…"
+      for i in $(seq 1 30); do
+        if docker compose exec -T <name> curl -sf http://127.0.0.1:<PORT>/health > /dev/null 2>&1; then
+          echo "webapp is up after ${i}s"; break
+        fi
+        sleep 1
+        if [ "$i" = "30" ]; then
+          echo "webapp did not become healthy within 30s"; docker compose logs; exit 1
+        fi
+      done
+    - echo "Running qa_check.js inside the container…"
+    - docker compose exec -T <name> node /app/qa_check.js
+    - echo "Fetching index.html and verifying brand injection…"
+    - docker compose exec -T <name> sh -c "curl -sf http://127.0.0.1:<PORT>/ | grep -q '<title>' && ! curl -sf http://127.0.0.1:<PORT>/ | grep -q '__BRAND_TITLE__'"
+  after_script:
+    - docker compose logs --tail 200 || true
+    - docker compose down --volumes --remove-orphans || true

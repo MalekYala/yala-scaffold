@@ -1,0 +1,123 @@
+# .gitlab-ci.yml — automated pipeline for <name> (shape: model)
+#
+# The pipeline exercises everything that does NOT need a GPU: build the
+# dataset, validate it (schema, contract, train/val leakage), and run the QA
+# gate. That is the part which must never regress silently.
+#
+# Training and evaluation are deliberately absent. Both need a GPU and a served
+# model, which no ordinary runner has. Run them where the hardware is, and let
+# `make qa` gate the resulting eval report before anything ships.
+
+stages:
+  - lint
+  - secret-scan
+  - security
+  - build
+  - test
+
+variables:
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_DRIVER: overlay2
+  DOCKER_BUILDKIT: "1"
+  COMPOSE_DOCKER_CLI_BUILD: "1"
+  PYTHON_IMAGE: python:3.12-slim
+  DOCKER_IMAGE: docker:27
+  DIND_IMAGE: docker:27-dind
+
+default:
+  retry:
+    max: 2
+    when: [runner_system_failure, stuck_or_timeout_failure, api_failure]
+  timeout: 30 minutes
+
+lint:python:
+  stage: lint
+  image: $PYTHON_IMAGE
+  rules:
+    - exists: ["**/*.py"]
+  before_script:
+    - pip install --quiet --no-cache-dir ruff
+  script:
+    - ruff check . || echo "WARN: ruff found issues"
+  allow_failure: true
+
+# Cheap drift checks: a locale missing a key, or an .env.example that no
+# longer matches the config module. Neither is visible to lint or typecheck,
+# and both are broken deploys waiting to happen. Stdlib-only, so no install.
+lint:drift checks:
+  stage: lint
+  image: python:3.12-slim
+  script:
+    - python3 scripts/check_locales.py
+    - python3 scripts/check_root_clutter.py
+  allow_failure: false
+
+secret-scan:gitleaks:
+  stage: secret-scan
+  image:
+    name: zricethezav/gitleaks:latest
+    entrypoint: [""]
+  script:
+    - gitleaks detect --source . --config .gitleaks.toml --redact --verbose --no-banner
+
+# Dependency vulnerabilities, as distinct from committed secrets (which
+# gitleaks covers above). allow_failure so a fresh scaffold is never born red
+# and an advisory published overnight never blocks an unrelated merge —
+# tighten this once you have triaged the initial findings.
+security:audit:
+  stage: security
+  image: $DOCKER_IMAGE
+  services:
+    - name: $DIND_IMAGE
+      alias: docker
+  before_script:
+    - apk add --no-cache make
+  script:
+    - make audit
+  allow_failure: true
+
+build:docker:
+  stage: build
+  image: $DOCKER_IMAGE
+  services:
+    - name: $DIND_IMAGE
+      alias: docker
+  variables:
+    IMAGE_TAG: "${CI_PROJECT_NAME}:${CI_COMMIT_SHORT_SHA}"
+  script:
+    - docker build --pull --tag "$IMAGE_TAG" .
+    - docker save "$IMAGE_TAG" -o image.tar
+  artifacts:
+    paths:
+      - image.tar
+    expire_in: 1 day
+
+test:dataset-and-gate:
+  stage: test
+  image: python:3.12-slim
+  needs: []
+  script:
+    - echo "Building dataset from dataset/sources/…"
+    - python3 dataset/build.py
+    - echo "Validating dataset (schema, contract, train/val leakage)…"
+    - python3 preflight.py
+    - |
+      # The QA gate needs an eval report. In CI there is no served model, so a
+      # committed report is what gets gated — that is the artifact a training
+      # host produced and someone chose to commit.
+      if [ -f eval/reports/latest.json ]; then
+        echo "Gating the committed eval report against eval/thresholds.json…"
+        python3 qa_check.py
+      else
+        echo "No committed eval report — skipping the threshold gate."
+        echo "Run 'make evaluate' on a machine with the model served, then"
+        echo "commit eval/reports/latest.json so CI can gate on it."
+      fi
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths:
+      - dataset/train.jsonl
+      - dataset/val.jsonl
+      - eval/eval.jsonl

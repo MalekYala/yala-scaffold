@@ -1,0 +1,60 @@
+{
+  "$comment": [
+    "Deterministic behaviour fixtures for <name>.",
+    "",
+    "Each scenario scripts what the model would say, turn by turn, and declares",
+    "what must happen as a result. Because the model is scripted, these replay",
+    "identically forever — no key, no network, no cost, no flake.",
+    "",
+    "They check the graph, not the model: routing, tool dispatch, termination,",
+    "and the wiring between them. Whether a *real* model chooses the right tool",
+    "is a different question, answered by evaluate.py against eval/cases.json.",
+    "",
+    "  turns[]              what the model returns, in order",
+    "  expect_tool_calls[]  every tool call expected, in order",
+    "  expect_final_contains  substring the final answer must contain",
+    "",
+    "A scenario declaring expected tool calls that produces none FAILS. For an",
+    "agent, running without erroring is the vacuous success."
+  ],
+  "scenarios": [
+    {
+      "name": "uses_a_tool_then_answers",
+      "input": "what is 2 plus 3?",
+      "turns": [
+        { "content": "", "tool_calls": [{ "name": "add", "args": { "a": 2, "b": 3 } }] },
+        { "content": "2 plus 3 is 5." }
+      ],
+      "expect_tool_calls": ["add"],
+      "expect_final_contains": "5"
+    },
+    {
+      "name": "answers_without_a_tool",
+      "input": "say hello",
+      "turns": [{ "content": "Hello." }],
+      "expect_tool_calls": [],
+      "expect_final_contains": "hello"
+    },
+    {
+      "name": "chains_two_tools",
+      "input": "add 1 and 1, then look up the answer",
+      "turns": [
+        { "content": "", "tool_calls": [{ "name": "add", "args": { "a": 1, "b": 1 } }] },
+        { "content": "", "tool_calls": [{ "name": "lookup", "args": { "key": "answer" } }] },
+        { "content": "The sum is 2 and the answer is 42." }
+      ],
+      "expect_tool_calls": ["add", "lookup"],
+      "expect_final_contains": "42"
+    },
+    {
+      "name": "reports_a_miss_rather_than_inventing",
+      "input": "look up the airspeed of a swallow",
+      "turns": [
+        { "content": "", "tool_calls": [{ "name": "lookup", "args": { "key": "airspeed" } }] },
+        { "content": "I could not find that: the lookup returned not found." }
+      ],
+      "expect_tool_calls": ["lookup"],
+      "expect_final_contains": "not found"
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+# AI code review for <name>, via OpenCodeReview.
+#
+# Include this from the project's .gitlab-ci.yml:
+#
+#     include:
+#       - local: 'review/ci.gitlab-ci.yml'
+#
+# and add `review` to that file's `stages:` list.
+#
+# Required CI/CD variables (Settings → CI/CD → Variables):
+#
+#   OCR_LLM_URL         LLM endpoint, e.g. https://api.openai.com/v1/chat/completions
+#   OCR_LLM_AUTH_TOKEN  API token — mark it **Masked**
+#   OCR_LLM_MODEL       model name, e.g. gpt-4o. There is no default; unset fails fast.
+#
+# Optional:
+#
+#   OCR_VERSION         npm version of @alibaba-group/open-code-review (default: pinned below)
+#   OCR_FAIL_ON         lowest severity that fails the job: critical|high|medium|low|none
+#                       (default: critical — see review/README.md for why)
+#   OCR_LANGUAGE        review output language, e.g. English, 中文
+#   OCR_USE_ANTHROPIC   "true" for Anthropic-native APIs (default: false, OpenAI-compatible)
+#   OCR_BACKGROUND      business context passed to the reviewer, e.g. the MR title
+#   OCR_RULE            path to a custom rules JSON file
+#   OCR_POST_COMMENTS   "true" to post inline discussions on the MR (see below)
+#   GITLAB_API_TOKEN    token with `api` scope; only needed when posting comments
+#
+# Inline MR comments are opt-in because they need a second component: upstream's
+# Apache-2.0 publisher, fetched at a pinned version with a checksum check by
+# review/fetch_poster.sh. Without it the job still reviews the diff, prints
+# every finding in the log, uploads the JSON, and gates on severity.
+
+.ocr_review_base:
+  stage: review
+  image: node:20
+  interruptible: true
+  variables:
+    # Full history: the reviewer diffs against the target branch's merge base.
+    GIT_DEPTH: 0
+    # Pin the reviewer. A floating `latest` means today's pipeline and
+    # yesterday's disagree for reasons unrelated to the code under review.
+    OCR_VERSION: "1.8.10"
+    OCR_FAIL_ON: "critical"
+  before_script:
+    - |
+      : "${OCR_LLM_URL:?set OCR_LLM_URL in Settings -> CI/CD -> Variables}"
+      : "${OCR_LLM_AUTH_TOKEN:?set OCR_LLM_AUTH_TOKEN in Settings -> CI/CD -> Variables}"
+      : "${OCR_LLM_MODEL:?set OCR_LLM_MODEL in Settings -> CI/CD -> Variables}"
+      npm install -g "@alibaba-group/open-code-review@${OCR_VERSION}"
+      ocr version || true
+      ocr config set llm.url "$OCR_LLM_URL"
+      ocr config set llm.auth_token "$OCR_LLM_AUTH_TOKEN"
+      ocr config set llm.model "$OCR_LLM_MODEL"
+      ocr config set llm.use_anthropic "${OCR_USE_ANTHROPIC:-false}"
+      # Thinking blocks break response parsing on several providers.
+      ocr config set llm.extra_body '{"thinking": {"type": "disabled"}}'
+      if [ -n "${OCR_LANGUAGE:-}" ]; then ocr config set language "$OCR_LANGUAGE"; fi
+
+code-review:
+  extends: .ocr_review_base
+  rules:
+    # Merge requests only. Reviewing every push to a branch spends tokens on
+    # work in progress and trains people to ignore the output.
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - mkdir -p .ocr
+    # `--to $CI_COMMIT_SHA` rather than the branch name, so MRs from forks
+    # resolve to the right commit.
+    - |
+      ARGS="--from origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME} --to ${CI_COMMIT_SHA} --format json --audience agent"
+      if [ -n "${OCR_BACKGROUND:-}" ]; then ARGS="$ARGS --background \"$OCR_BACKGROUND\""; fi
+      if [ -n "${OCR_RULE:-}" ]; then ARGS="$ARGS --rule $OCR_RULE"; fi
+      set +e
+      eval ocr review $ARGS > .ocr/result.json 2> .ocr/stderr.log
+      OCR_EXIT=$?
+      set -e
+      echo "ocr exit: $OCR_EXIT"
+      [ "$OCR_EXIT" = "0" ] || { echo "--- ocr stderr ---"; cat .ocr/stderr.log; exit "$OCR_EXIT"; }
+    # Optional: inline discussions on the MR. Fetched pinned + checksummed.
+    - |
+      if [ "${OCR_POST_COMMENTS:-false}" = "true" ]; then
+        apt-get update -qq && apt-get install -y -qq python3 >/dev/null
+        ./review/fetch_poster.sh
+        GITLAB_API_TOKEN="${GITLAB_API_TOKEN:-$CI_JOB_TOKEN}" \
+          python3 review/vendor/post_review.py .ocr/result.json || \
+          echo "posting comments failed — findings are still in the log and artifact"
+      fi
+    # Always summarise and gate, whether or not comments were posted.
+    - |
+      apt-get update -qq && apt-get install -y -qq python3 >/dev/null 2>&1 || true
+      python3 review/gate.py .ocr/result.json --fail-on "${OCR_FAIL_ON}"
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths:
+      - .ocr/result.json
+      - .ocr/stderr.log

@@ -1,0 +1,115 @@
+name: <name> CI (backtest, python)
+
+on:
+  push:
+    branches: [main, "bot/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install --quiet ruff
+      - name: ruff check
+        run: ruff check .
+      - name: ruff format --check
+        run: ruff format --check .
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Install deps + mypy
+        run: |
+          pip install --quiet -r requirements.txt -r requirements-dev.txt
+      - name: mypy (strict, per pyproject.toml)
+        run: mypy .
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Install deps
+        run: pip install --quiet -r requirements.txt -r requirements-dev.txt
+      - name: pytest
+        run: pytest -q tests/
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: gitleaks
+        shell: bash
+        run: |
+          # Install gitleaks CLI directly — gitleaks/gitleaks-action@v2 now
+          # requires a paid GITLEAKS_LICENSE secret, but the underlying CLI
+          # remains open-source under an MIT license.
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64) ARCH=x64 ;;
+            aarch64|arm64) ARCH=arm64 ;;
+          esac
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_${ARCH}.tar.gz" \
+            | tar -xzC /tmp gitleaks
+          /tmp/gitleaks detect --config .gitleaks.toml --no-git --verbose --redact
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, unit-tests, secret-scan]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --pull --tag <name>:${{ github.sha }} .
+
+  run-backtest:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --tag <name>:${{ github.sha }} .
+      - name: Run backtest against fixtures
+        run: |
+          cp .env.example .env
+          mkdir -p outputs results
+          docker run --rm \
+            -v "$PWD/fixtures:/app/fixtures:ro" \
+            -v "$PWD/config:/app/config:ro" \
+            -v "$PWD/outputs:/app/outputs" \
+            -v "$PWD/results:/app/results" \
+            --env-file .env \
+            <name>:${{ github.sha }}
+      - name: Verify metrics schema + artifacts
+        run: |
+          test -f results/metrics.json
+          python3 -c "
+          import json, os
+          d = json.load(open('results/metrics.json'))
+          assert d.get('success'), d
+          required = {'win_rate', 'sharpe_ratio', 'max_drawdown_pct', 'total_return_pct', 'trades_count'}
+          missing = required - set(d.keys())
+          assert not missing, 'metrics.json missing: ' + str(missing)
+          assert d['trades_count'] > 0, 'zero trades — strategy generated no signals'
+          print('win_rate={:.2%} trades={} sharpe={:.2f}'.format(d['win_rate'], d['trades_count'], d['sharpe_ratio']))
+          "
+          test -f outputs/equity_curve.png
+          test -f outputs/drawdown.png
+          test -f outputs/trade_log.xlsx
+          test -f results/trades.csv
+      - name: Run qa_check.py
+        run: pip install --quiet httpx python-dotenv && python3 qa_check.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backtest-results
+          path: |
+            outputs/
+            results/
+          retention-days: 14

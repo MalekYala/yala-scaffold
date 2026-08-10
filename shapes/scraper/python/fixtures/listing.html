@@ -1,0 +1,39 @@
+<!doctype html>
+<!--
+  A committed fixture page for <name>'s extractor.
+
+  This exists so qa_check can prove extraction still works without touching
+  the live site. Testing a scraper against the real internet makes the suite
+  fail for reasons that have nothing to do with your code — rate limits,
+  captchas, an outage, someone else's deploy — and, worse, it passes when the
+  site quietly changes its markup and your selectors start returning nothing.
+
+  When the real site changes, update this fixture in the same commit as the
+  selectors. The diff then shows exactly what moved.
+-->
+<html lang="en">
+<head><title>Example listings</title></head>
+<body>
+  <main>
+    <article class="listing" data-id="a-1">
+      <h2 class="listing-title">Blue widget</h2>
+      <span class="price">£12.50</span>
+      <span class="stock">In stock</span>
+      <a class="detail-link" href="/items/a-1">details</a>
+    </article>
+    <article class="listing" data-id="a-2">
+      <h2 class="listing-title">Red widget</h2>
+      <span class="price">£8.00</span>
+      <span class="stock">Out of stock</span>
+      <a class="detail-link" href="/items/a-2">details</a>
+    </article>
+    <article class="listing" data-id="a-3">
+      <h2 class="listing-title">Green widget, large</h2>
+      <span class="price">£24.99</span>
+      <span class="stock">In stock</span>
+      <a class="detail-link" href="/items/a-3">details</a>
+    </article>
+  </main>
+  <nav><a class="next-page" href="/listings?page=2">next</a></nav>
+</body>
+</html>

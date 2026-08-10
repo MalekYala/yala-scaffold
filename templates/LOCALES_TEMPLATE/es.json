@@ -1,0 +1,42 @@
+{
+  "app": {
+    "title": "<name>",
+    "tagline": "Una línea de eslogan para marketing — reemplazar",
+    "welcome": "Bienvenido a {{name}}",
+    "loading": "Cargando…",
+    "error": "Algo salió mal"
+  },
+  "nav": {
+    "home": "Inicio",
+    "about": "Acerca de",
+    "docs": "Documentación",
+    "contact": "Contacto"
+  },
+  "actions": {
+    "submit": "Enviar",
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "close": "Cerrar",
+    "retry": "Reintentar"
+  },
+  "status": {
+    "ok": "OK",
+    "warning": "Advertencia",
+    "error": "Error",
+    "pending": "Pendiente",
+    "success": "Éxito"
+  },
+  "errors": {
+    "not_found": "Página no encontrada",
+    "unauthorized": "No está autorizado a ver esta página",
+    "server_error": "Error del servidor — inténtelo de nuevo más tarde",
+    "validation_failed": "Verifique su entrada e inténtelo de nuevo"
+  },
+  "footer": {
+    "copyright": "© {{year}} {{company}}. Todos los derechos reservados.",
+    "privacy": "Privacidad",
+    "terms": "Términos"
+  }
+}

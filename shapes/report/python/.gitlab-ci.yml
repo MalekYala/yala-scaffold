@@ -1,0 +1,136 @@
+# .gitlab-ci.yml — automated pipeline for <name> (shape: report)
+#
+# Runs the document generator, asserts each artifact exists and is non-empty,
+# then uploads outputs/ as a pipeline artifact so you can download the generated
+# PDF / slideshow / xlsx directly from the GitLab job page.
+
+stages:
+  - lint
+  - secret-scan
+  - security
+  - build
+  - test
+
+variables:
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_DRIVER: overlay2
+  DOCKER_BUILDKIT: "1"
+  COMPOSE_DOCKER_CLI_BUILD: "1"
+  PYTHON_IMAGE: python:3.12-slim
+  DOCKER_IMAGE: docker:27
+  DIND_IMAGE: docker:27-dind
+
+default:
+  retry:
+    max: 2
+    when: [runner_system_failure, stuck_or_timeout_failure, api_failure]
+  timeout: 30 minutes
+
+lint:python:
+  stage: lint
+  image: $PYTHON_IMAGE
+  rules:
+    - exists: ["**/*.py"]
+  before_script:
+    - pip install --quiet --no-cache-dir ruff
+  script:
+    - ruff check . || echo "WARN: ruff found issues"
+  allow_failure: true
+
+# Cheap drift checks: a locale missing a key, or an .env.example that no
+# longer matches the config module. Neither is visible to lint or typecheck,
+# and both are broken deploys waiting to happen. Stdlib-only, so no install.
+lint:drift checks:
+  stage: lint
+  image: python:3.12-slim
+  script:
+    - python3 scripts/check_locales.py
+    - python3 scripts/check_root_clutter.py
+  allow_failure: false
+
+secret-scan:gitleaks:
+  stage: secret-scan
+  image:
+    name: zricethezav/gitleaks:latest
+    entrypoint: [""]
+  script:
+    - gitleaks detect --source . --config .gitleaks.toml --redact --verbose --no-banner
+
+# Dependency vulnerabilities, as distinct from committed secrets (which
+# gitleaks covers above). allow_failure so a fresh scaffold is never born red
+# and an advisory published overnight never blocks an unrelated merge —
+# tighten this once you have triaged the initial findings.
+security:audit:
+  stage: security
+  image: $DOCKER_IMAGE
+  services:
+    - name: $DIND_IMAGE
+      alias: docker
+  before_script:
+    - apk add --no-cache make
+  script:
+    - make audit
+  allow_failure: true
+
+build:docker:
+  stage: build
+  image: $DOCKER_IMAGE
+  services:
+    - name: $DIND_IMAGE
+      alias: docker
+  variables:
+    IMAGE_TAG: "${CI_PROJECT_NAME}:${CI_COMMIT_SHORT_SHA}"
+  script:
+    - docker build --pull --tag "$IMAGE_TAG" .
+    - docker save "$IMAGE_TAG" -o image.tar
+  artifacts:
+    paths:
+      - image.tar
+    expire_in: 1 day
+
+test:generate-report:
+  stage: test
+  image: $DOCKER_IMAGE
+  services:
+    - name: $DIND_IMAGE
+      alias: docker
+  needs:
+    - job: build:docker
+      artifacts: true
+  variables:
+    IMAGE_TAG: "${CI_PROJECT_NAME}:${CI_COMMIT_SHORT_SHA}"
+  before_script:
+    - apk add --no-cache python3 py3-pip
+    - docker load -i image.tar
+    - cp .env.example .env
+    - mkdir -p outputs
+  script:
+    - echo "Generating branded, localized reports…"
+    - docker run --rm -v "$PWD/content:/app/content:ro" -v "$PWD/templates:/app/templates:ro" -v "$PWD/brand:/app/brand:ro" -v "$PWD/locales:/app/locales:ro" -v "$PWD/outputs:/app/outputs" --env-file .env "$IMAGE_TAG"
+    - echo "Verifying manifest and per-locale artifacts…"
+    - test -f outputs/manifest.json
+    - |
+      python3 -c "
+      import json, os
+      d = json.load(open('outputs/manifest.json'))
+      assert d.get('success'), d
+      print('success: True')
+      print('brand:', d.get('brand'))
+      print('locales:', d.get('locales'))
+      for lang in d.get('locales', []):
+          for kind in ['report_%s.pdf', 'report_%s.html', 'slides_%s.html', 'summary_%s.xlsx']:
+              path = 'outputs/' + (kind % lang)
+              assert os.path.exists(path), path + ' missing'
+              assert os.path.getsize(path) > 512, path + ' too small'
+              print('ok', path, os.path.getsize(path), 'bytes')
+      "
+    - echo "Running qa_check.py…"
+    - python3 -m pip install --quiet httpx python-dotenv
+    - python3 qa_check.py
+  artifacts:
+    when: always
+    name: "$CI_PROJECT_NAME-$CI_COMMIT_SHORT_SHA-report"
+    paths:
+      - outputs/
+    expire_in: 2 weeks

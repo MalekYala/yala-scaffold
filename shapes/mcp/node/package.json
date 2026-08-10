@@ -1,0 +1,21 @@
+{
+  "name": "<name>",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test tests/server.test.js",
+    "typecheck": "node --check src/server.js && node --check qa_check.js",
+    "qa": "node qa_check.js",
+    "lint": "eslint src/ qa_check.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.12.1"
+  },
+  "devDependencies": {
+    "eslint": "9.17.0"
+  }
+}

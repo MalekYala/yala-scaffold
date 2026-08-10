@@ -1,0 +1,35 @@
+services:
+  <name>:
+    build:
+      context: .
+      target: runtime
+      args:
+        APP_UID: "${HOST_UID:-1000}"
+        APP_GID: "${HOST_GID:-1000}"
+        VERSION: "${VERSION:-0.0.0-dev}"
+    image: <name>:latest
+    container_name: <name>
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/app/data:Z
+    mem_limit: 512m
+    cpus: 2
+    # No ports — workers are not reachable from outside. They pull work from
+    # queues, databases, or filesystems specified in .env.
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import os, time, sys; sys.exit(0 if time.time() - os.path.getmtime('/app/data/heartbeat') < 60 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

@@ -1,0 +1,35 @@
+services:
+  <name>:
+    build:
+      context: .
+      target: runtime
+      args:
+        APP_UID: "${HOST_UID:-1000}"
+        APP_GID: "${HOST_GID:-1000}"
+        VERSION: "${VERSION:-0.0.0-dev}"
+    image: <name>:latest
+    container_name: <name>
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777
+    restart: "no"
+    env_file: .env
+    environment:
+      # If an operator has a ConvertX instance running, set this in .env and
+      # the project will prefer it over the bundled toolchain for certain
+      # conversions (e.g., ebook → pdf). Leave empty to run fully offline.
+      - CONVERTX_URL=${CONVERTX_URL:-}
+    volumes:
+      - ./content:/app/content:ro,Z
+      - ./templates:/app/templates:ro,Z
+      - ./outputs:/app/outputs:Z
+      - ./assets:/app/assets:ro,Z
+    mem_limit: 2g
+    cpus: 2

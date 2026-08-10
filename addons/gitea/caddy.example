@@ -1,0 +1,61 @@
+# Caddy reverse-proxy snippet for <name>'s Gitea frontend.
+#
+# Paste this block into your central Caddyfile (the operator runs one
+# Caddy instance that fronts every project), then reload Caddy:
+#
+#     caddy reload --config /path/to/Caddyfile
+#
+# This makes the project's Gitea sign-in page reachable at:
+#
+#     https://<name>-git.<your-public-domain>
+#
+# Where `<your-public-domain>` is the DNS zone you use for openclaw-managed
+# projects (e.g. `dev.your-company.internal`). You also need to:
+#
+#   1. Add a wildcard A record: `*.<your-public-domain>` → your host IP
+#      (OR one A record per project)
+#   2. Set GITEA_PUBLIC_URL in this project's .env so Gitea's ROOT_URL is
+#      correct and the bot posts clickable PR URLs in IRC:
+#
+#          GITEA_PUBLIC_URL=https://<name>-git.<your-public-domain>
+#          GITEA_PUBLIC_DOMAIN=<your-public-domain>
+#
+#   3. Restart the Gitea container so ROOT_URL takes effect:
+#
+#          make gitea-down && make gitea
+#
+# Gitea requires sign-in for all UI and repository browsing, and bootstrap
+# creates the project repository as private. Do not disable those defaults
+# merely because this proxy is internet-reachable.
+#
+# AGENTS.md §24 has the full rationale. Keep this file committed — it's a
+# placeholder. The actual zone lives only in LOCAL.md and .env.
+
+<name>-git.<GITEA_PUBLIC_DOMAIN> {
+    reverse_proxy 127.0.0.1:<GITEA_HTTP_PORT>
+
+    # Let Caddy handle gzip + large push payloads
+    encode gzip
+    request_body {
+        max_size 512MB
+    }
+
+    # Forward original headers so Gitea builds correct URLs
+    header_up Host {host}
+    header_up X-Real-IP {remote_host}
+    header_up X-Forwarded-For {remote_host}
+    header_up X-Forwarded-Proto {scheme}
+
+    # Logging — rotate at the operator's Caddy level
+    log {
+        output file /var/log/caddy/<name>-git.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+        format console
+    }
+}
+
+# Optional: SSH passthrough for git clone via ssh://git@<name>-git.<...>:2222/...
+# Caddy's layer4 plugin supports this; or operators can run a separate SSH
+# forwarder. The scaffold ships HTTPS-only by default.
