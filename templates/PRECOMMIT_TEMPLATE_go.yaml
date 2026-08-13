@@ -1,0 +1,71 @@
+# Pre-commit hooks for <name> (lang: go).
+#
+# Install once per clone:
+#     pip install pre-commit && pre-commit install && pre-commit install --hook-type pre-push
+#
+# Fast, formatting-and-safety hooks run at `pre-commit`. Slow, whole-project
+# hooks (go test, go vet) run at `pre-push`, where waiting is expected. A commit
+# hook that takes 30 seconds gets bypassed with `--no-verify` and then protects
+# nothing.
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: detect-private-key
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        entry: sh -c 'files="$(gofmt -l .)"; test -z "$files" || { echo "$files"; exit 1; }'
+        language: system
+        pass_filenames: false
+
+      - id: check-locales
+        name: locale key drift
+        entry: python3 scripts/check_locales.py
+        language: system
+        pass_filenames: false
+        files: ^locales/
+
+      - id: check-env
+        name: .env.example matches config schema
+        entry: python3 scripts/check_env.py
+        language: system
+        pass_filenames: false
+        files: ^(internal/config/config\.go|\.env\.example|vault/secret-map\.tsv)$
+
+      - id: check-root-clutter
+        name: no scratch files at the repo root
+        entry: python3 scripts/check_root_clutter.py
+        language: system
+        pass_filenames: false
+
+      - id: go-vet
+        name: go vet
+        entry: go vet ./...
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: go-test
+        name: go test
+        entry: go test ./...
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

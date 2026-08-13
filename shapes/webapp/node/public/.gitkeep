@@ -1,0 +1,3 @@
+# public/ holds static assets copied verbatim into the Vite build output.
+# Put anything here that should be served from the site root (e.g. robots.txt,
+# humans.txt, static images that aren't part of the brand kit).

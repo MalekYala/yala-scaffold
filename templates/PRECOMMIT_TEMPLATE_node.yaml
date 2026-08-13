@@ -1,0 +1,64 @@
+# Pre-commit hooks for <name> (lang: node).
+#
+# Install once per clone:
+#     pip install pre-commit && pre-commit install && pre-commit install --hook-type pre-push
+#
+# Fast, formatting-and-safety hooks run at `pre-commit` on **staged files
+# only**. Slow, whole-project hooks (tests) run at `pre-push`, where waiting is
+# expected. A commit hook that takes 30 seconds gets bypassed with
+# `--no-verify` and then protects nothing.
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: detect-private-key
+
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: npx --no -- eslint --fix --max-warnings 0
+        language: system
+        files: \.(js|mjs|cjs|jsx)$
+
+      - id: check-locales
+        name: locale key drift
+        entry: python3 scripts/check_locales.py
+        language: system
+        pass_filenames: false
+        files: ^locales/
+
+      - id: check-env
+        name: .env.example matches config schema
+        entry: python3 scripts/check_env.py
+        language: system
+        pass_filenames: false
+        files: ^(src/config\.js|\.env\.example|vault/secret-map\.tsv)$
+
+      - id: check-root-clutter
+        name: no scratch files at the repo root
+        entry: python3 scripts/check_root_clutter.py
+        language: system
+        pass_filenames: false
+
+      - id: node-test
+        name: node tests
+        entry: npm test
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

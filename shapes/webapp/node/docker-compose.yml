@@ -1,0 +1,43 @@
+services:
+  <name>:
+    build:
+      context: .
+      args:
+        APP_UID: ${HOST_UID:-1000}
+        APP_GID: ${HOST_GID:-1000}
+        VERSION: ${VERSION:-0.0.0-dev}
+    image: <name>:latest
+    container_name: <name>
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    env_file: .env
+    environment:
+      # Operators can point BRAND_CONFIG_PATH at a white-labeled brand dir
+      # without rebuilding — the Fastify server loads it at startup for the
+      # /api/brand endpoint. (Build-time CSS variables still come from the
+      # brand/ directory baked into the image.)
+      - BRAND_CONFIG_PATH=${BRAND_CONFIG_PATH:-/app/brand/config.json}
+      - DEFAULT_LOCALE=${DEFAULT_LOCALE:-en}
+    ports:
+      - "127.0.0.1:${PORT:-<PORT>}:${PORT:-<PORT>}"
+    volumes:
+      # Mount brand/ read-only so operators can override without rebuilding.
+      # Comment out if you want the baked-in brand to be authoritative.
+      - ./brand:/app/brand:ro,z
+      - ./locales:/app/locales:ro,z
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    mem_limit: 256m
+    cpus: 1
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:${PORT:-<PORT>}/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

@@ -1,0 +1,17 @@
+<!doctype html>
+<!--
+  The same page shape with no results — a legitimately empty listing.
+
+  qa_check uses this to prove the extractor distinguishes "the page rendered
+  and there is genuinely nothing here" from "the page changed and my selectors
+  match nothing". Those look identical if you only count extracted rows, and
+  conflating them is how a broken scraper reports zero for a week.
+-->
+<html lang="en">
+<head><title>Example listings</title></head>
+<body>
+  <main>
+    <p class="no-results">No listings matched your search.</p>
+  </main>
+</body>
+</html>

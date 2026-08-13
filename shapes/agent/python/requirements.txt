@@ -1,0 +1,9 @@
+# Pinned deliberately. Agent frameworks move fast and change behaviour between
+# minor versions; an unpinned graph that "stopped working" is usually a
+# dependency that shipped, not a change you made.
+langgraph==1.2.10
+langchain-core==1.5.3
+
+# Provider SDKs are imported lazily in models.py, so a project using only a
+# local OpenAI-compatible endpoint pays for neither of them at import time.
+langchain-openai==1.2.1

@@ -1,0 +1,10 @@
+{"input": "the export button does nothing on the reports page", "output": {"label": "bug", "confidence": "high"}}
+{"input": "could you add dark mode to the settings screen", "output": {"label": "feature_request", "confidence": "high"}}
+{"input": "how do I change my billing address", "output": {"label": "question", "confidence": "high"}}
+{"input": "charged twice this month, please refund one", "output": {"label": "billing", "confidence": "high"}}
+{"input": "asdkjh qwe", "output": {"label": "unknown", "confidence": "low"}}
+{"input": "app crashes on launch after the latest update", "output": {"label": "bug", "confidence": "high"}}
+{"input": "it would be great to bulk-select rows", "output": {"label": "feature_request", "confidence": "medium"}}
+{"input": "where can I find the API docs", "output": {"label": "question", "confidence": "high"}}
+{"input": "my invoice total looks wrong", "output": {"label": "billing", "confidence": "medium"}}
+{"input": "the page is slow but I am not sure why", "output": {"label": "bug", "confidence": "low"}}

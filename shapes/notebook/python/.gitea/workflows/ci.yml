@@ -1,0 +1,99 @@
+name: <name> CI (notebook, python)
+
+on:
+  push:
+    branches: [main, "bot/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install --quiet ruff
+      - name: ruff check
+        run: ruff check .
+      - name: ruff format --check
+        run: ruff format --check .
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Install deps + mypy
+        run: |
+          pip install --quiet -r requirements.txt -r requirements-dev.txt
+      - name: mypy (strict, per pyproject.toml)
+        run: mypy .
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Install deps
+        run: pip install --quiet -r requirements.txt -r requirements-dev.txt
+      - name: pytest
+        run: pytest -q tests/
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: gitleaks
+        shell: bash
+        run: |
+          # Install gitleaks CLI directly — gitleaks/gitleaks-action@v2 now
+          # requires a paid GITLEAKS_LICENSE secret, but the underlying CLI
+          # remains open-source under an MIT license.
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64) ARCH=x64 ;;
+            aarch64|arm64) ARCH=arm64 ;;
+          esac
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_${ARCH}.tar.gz" \
+            | tar -xzC /tmp gitleaks
+          /tmp/gitleaks detect --config .gitleaks.toml --no-git --verbose --redact
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, unit-tests, secret-scan]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --pull --tag <name>:${{ github.sha }} .
+
+  execute-notebooks:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --tag <name>:${{ github.sha }} .
+      - name: Execute all notebooks via nbconvert
+        run: |
+          cp .env.example .env
+          mkdir -p outputs
+          docker run --rm \
+            -v "$PWD/notebooks:/app/notebooks" \
+            -v "$PWD/data:/app/data" \
+            -v "$PWD/outputs:/app/outputs" \
+            --env-file .env \
+            --entrypoint sh <name>:${{ github.sha }} -c '
+              cd /app && \
+              for nb in $(find notebooks -name "*.ipynb"); do
+                echo "Executing $nb"
+                jupyter nbconvert --to notebook --execute "$nb" --output-dir /app/outputs --ExecutePreprocessor.timeout=120 || exit 1
+              done
+            '
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: executed-notebooks
+          path: outputs/
+          retention-days: 14

@@ -1,0 +1,20 @@
+{
+  "project": "<name>",
+  "shape": "tui",
+  "kpis": [
+    {
+      "name": "qa_score",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": 1.0,
+      "interval_s": 300,
+      "source": {
+        "type": "shell",
+        "cmd": "./metric.sh",
+        "timeout_s": 30
+      },
+      "description": "Non-interactive TUI render smoke-check result"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "test-app",
+  "display_name": "Test App",
+  "colors": {
+    "primary": "#1f77b4"
+  },
+  "fonts": {},
+  "logo": {}
+}

@@ -1,0 +1,40 @@
+{
+  "$comment": [
+    "Ship criteria for <name>, checked by qa_check.py against the latest",
+    "eval report.",
+    "",
+    "Set these BEFORE a training run and commit them. Deciding what counts as",
+    "good enough after seeing the number is how a regression ships with a",
+    "rationalisation attached.",
+    "",
+    "metric    — dotted path into the eval report",
+    "direction — 'min' (actual must be >= value) or 'max' (actual must be <=)",
+    "",
+    "Latency sits alongside accuracy on purpose: a model two points better and",
+    "three times slower is usually not an improvement, and thresholds that omit",
+    "latency let that trade be made by accident.",
+    "",
+    "The starting values are placeholders. Replace them with numbers your",
+    "current baseline actually achieves, then raise them as you improve."
+  ],
+  "thresholds": [
+    {
+      "metric": "summary.exact_match",
+      "direction": "min",
+      "value": 0.8,
+      "note": "overall exact-match accuracy on the eval set"
+    },
+    {
+      "metric": "summary.parse_error_rate",
+      "direction": "max",
+      "value": 0.0,
+      "note": "unparseable output is never acceptable — the consumer cannot recover"
+    },
+    {
+      "metric": "summary.latency_ms.p95",
+      "direction": "max",
+      "value": 2000,
+      "note": "placeholder — measure your baseline's tail latency as served, then set this just above it"
+    }
+  ]
+}

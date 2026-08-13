@@ -1,0 +1,30 @@
+services:
+  <name>:
+    build:
+      context: .
+      target: runtime
+      args:
+        APP_UID: "${HOST_UID:-1000}"
+        APP_GID: "${HOST_GID:-1000}"
+        VERSION: "${VERSION:-0.0.0-dev}"
+    image: <name>:latest
+    container_name: <name>
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    # Not a daemon: an MCP client launches this as a subprocess and owns its
+    # lifetime. `docker compose run` is the right way to exercise it by hand.
+    restart: "no"
+    stdin_open: true
+    env_file: .env
+    volumes:
+      - ./data:/app/data:Z
+    mem_limit: 512m
+    cpus: 2

@@ -1,0 +1,162 @@
+# Bot config for <name>.
+#
+# Declarative spec for this project's IRC agent. Consumed by bot/bot.py at
+# startup. Environment variables are interpolated as `${VAR}` or
+# `${VAR:-default}`.
+
+project: <name>
+
+# ── Identity ──────────────────────────────────────────────────────────────
+identity:
+  name: "${IRC_NICK:-<name>-bot}"
+  realname: "<name> project agent"
+  role: >
+    I am the agent responsible for the <name> project. I can answer
+    questions about this codebase, track KPIs, query operator services
+    (the capability broker, the vector database, the memory archive),
+    ask subject-matter experts in #agents,
+    ask the design advisor in #devs for code-index-backed design-pattern advice, and
+    dispatch coding agents (Cursor, Claude Code, Aider) to make changes
+    when asked.
+
+# ── IRC ───────────────────────────────────────────────────────────────────
+irc:
+  server: "${IRC_SERVER}"
+  port: ${IRC_PORT:-6667}
+  tls: ${IRC_TLS:-false}
+  nick: "${IRC_NICK:-<name>-bot}"
+  channel: "${IRC_CHANNEL:-#<name>}"
+  # Peer channels this bot references (but does not own)
+  peers:
+    agents: "${AGENTS_CHANNEL:-#agents}"
+    devs: "${ADVISOR_CHANNEL:-#devs}"
+  # Optional NickServ password — leave empty if no auth
+  password: "${IRC_PASSWORD:-}"
+  # Quit message on clean shutdown
+  quit_message: "<name>-bot exiting"
+
+# ── LLM backend for the tool loop ─────────────────────────────────────────
+# OpenAI-compatible endpoint — works with Ollama, llm-router, llama.cpp,
+# vLLM, LiteLLM, real OpenAI, etc. The operator picks.
+llm:
+  url: "${LLM_ROUTER_URL:-https://openrouter.ai/api/v1}"
+  model: "${LLM_MODEL:-nvidia/nemotron-3-super-120b-a12b:free}"
+  api_key: "${LLM_API_KEY:-}"
+  max_tokens: 2048
+  temperature: 0.2
+  # Max tool-call iterations before forcing a final answer
+  max_iterations: 6
+  # Timeout per LLM call. 30s is generous for cloud APIs (OpenAI
+  # gpt-4o-mini responds in 1-3s). Bump to 180 if using local Ollama
+  # models that need cold-start time.
+  timeout_s: 30
+
+# ── Tools the bot can call ────────────────────────────────────────────────
+# Each tool is a Python module under bot/tools/. Tools are discovered by
+# name here; missing requires_env means the tool loads unconditionally.
+tools:
+  - name: local_rag
+    module: tools.local_rag
+    description: "Semantic/full-text search over this project's code + docs + strategy. Use first for any question about how this project works."
+    # Provided by the RAG add-on. Without it this tool has nothing to read,
+    # so it is not advertised to the model at all.
+    requires_path: [rag/config.yml]
+
+
+
+
+
+
+  - name: dispatch_agent
+    module: tools.dispatch_agent
+    description: "Dispatch one or more coding agents (Cursor, Claude Code, Aider) to complete a task that requires writing or changing code. Runs inside a Docker sandbox with only the project root mounted and no network. Writes a pre-flight memory brief into the workspace and captures the outcome as a memory after. Returns a branch name for human review — never auto-merges."
+    requires_env: [AGENT_COMMAND]
+
+  - name: write_memory
+    module: tools.write_memory
+    description: "Capture a project learning as a persistent memory file in memory/<category>/. Use when something is worth remembering: experiment outcome, bug fix rationale, decision trade-off, novel pattern discovered. Accepts JSON or 'category: title :: body' format."
+
+  - name: read_memory_local
+    module: tools.read_memory_local
+    description: "Search this project's memory/ directory for past learnings. Use BEFORE running experiments or dispatching sub-agents so you don't repeat mistakes. Supports filters: category, confidence, outcome, tags."
+
+
+  - name: gitea
+    module: tools.gitea
+    description: "Query and manipulate this project's Gitea instance: list open PRs, fetch PR details and diffs, open/merge/close PRs, post comments. Commands: list_prs | get_pr <n> | merge_pr <n> | close_pr <n> | comment_pr <n> <body> | open_pr <title>::<body>::<head>."
+    requires_env: [GITEA_URL, GITEA_TOKEN]
+    # Provided by the Gitea add-on; without it there is no server to talk to.
+    requires_path: [gitea/docker-compose.gitea.yml]
+
+  - name: review_pr
+    module: tools.review_pr
+    description: "Review a pull request on this project's Gitea — fetch the diff, wait for the Gitea Actions pipeline, run test_quality analysis, cross-reference project memory and the design advisor's design-pattern advice, run an LLM review with strict real-tests rules, then merge / request_changes / reject. Pipeline failure or test_quality < 0.8 blocks merge regardless of LLM verdict. Captures outcome to memory/pr_reviews/."
+    requires_env: [GITEA_URL, GITEA_TOKEN, LLM_ROUTER_URL]
+    # Provided by the Gitea add-on; without it there is no server to talk to.
+    requires_path: [gitea/docker-compose.gitea.yml]
+
+  - name: watch_pipeline
+    module: tools.watch_pipeline
+    description: "Wait for a PR's Gitea Actions pipeline to finish and report the result. On failure: downloads failed job logs, classifies the error (lint/test/build/runtime/dependency/unknown), and writes memory/pipeline_failures/. Use BEFORE approving a PR, or standalone to investigate a failing run. Query: '<pr-number>' or 'pr=<n>; timeout=<seconds>; quick'."
+    requires_env: [GITEA_URL, GITEA_TOKEN]
+    # Provided by the Gitea add-on; without it there is no server to talk to.
+    requires_path: [gitea/docker-compose.gitea.yml]
+
+  - name: test_quality
+    module: tools.test_quality
+    description: "Static analyzer for test meaningfulness. Scans changed test files (Python AST / JS regex) and reports: assertion counts per test, anti-patterns (assert True, empty tests, mock-only tests), source→test coverage mapping, overall 0.0-1.0 score. Use before approving PRs to enforce real functional validating tests. Query: '<pr-number>' or 'local' for the current working tree."
+
+
+
+# ── Watch — files whose changes the bot may announce in-channel ───────────
+watch:
+  # Structured perf logs (AGENTS.md §8) — bot summarizes phase timings
+  - path: "logs/"
+    pattern: "*-perf*"
+    type: perf
+    debounce_s: 30
+  # KPI sentinels — bot announces when success sentinel changes
+  - path: "results/metrics.json"
+    type: json
+    debounce_s: 10
+  - path: "outputs/manifest.json"
+    type: json
+    debounce_s: 10
+
+# ── Agent dispatch (AGENTS.md §22) ────────────────────────────────────────
+# Sub-agents are ALWAYS sandboxed by default. The sandbox runs the operator-
+# configured AGENT_COMMAND inside a locked-down Docker container with only
+# the project root mounted and no network. Set AGENT_SANDBOX=none ONLY for
+# local dev — never in production.
+agent_dispatch:
+  # Max concurrent agents — prevents runaway forking
+  max_concurrent: ${AGENT_MAX_CONCURRENT:-3}
+  # Timeout per agent in seconds
+  timeout_s: ${AGENT_TIMEOUT_S:-1800}
+  # Each dispatched agent works on its own git branch (never touches main)
+  branch_prefix: "bot/"
+  # Operator-supplied dispatcher (which coding agent to use)
+  dispatcher: "${AGENT_DISPATCHER:-}"
+  # The actual command run INSIDE the sandbox. Gets TASK, BRANCH, PROJECT
+  # env vars set. Empty by default — operator must configure.
+  command: "${AGENT_COMMAND:-}"
+
+  # ── Sandbox isolation ────────────────────────────────────────────────
+  sandbox:
+    # Mode: docker (default, production) | none (local dev, UNSAFE)
+    mode: "${AGENT_SANDBOX:-docker}"
+    # Docker image containing the coding agent CLI (Cursor, Claude, Aider).
+    # Operator builds this once — see bot/README.md for the sandbox image
+    # construction guide. Required when mode=docker.
+    image: "${AGENT_SANDBOX_IMAGE:-}"
+    # Network mode: none (default, no outbound) | host (dev) | bridge
+    # | a custom network name. 'none' enforces the "no outside access"
+    # rule — if the agent needs an LLM, operator must bake it into the
+    # sandbox image or use a restricted bridge with an egress proxy.
+    network: "${AGENT_SANDBOX_NETWORK:-none}"
+    # CPU + memory caps
+    cpus: "${AGENT_SANDBOX_CPUS:-2}"
+    memory: "${AGENT_SANDBOX_MEMORY:-2g}"
+    # Whitelisted env vars forwarded into the sandbox (comma-separated).
+    # Everything else is stripped — no operator secrets leak in.
+    forward_env: "${AGENT_SANDBOX_FORWARD_ENV:-OPENAI_API_KEY,ANTHROPIC_API_KEY,OPENAI_BASE_URL,LLM_ROUTER_URL,LLM_MODEL}"

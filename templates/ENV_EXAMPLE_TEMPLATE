@@ -1,0 +1,220 @@
+# <name> — environment configuration
+#
+# Copy this file to .env and fill in real values:
+#   cp .env.example .env
+#
+# .env is gitignored. Never commit real secrets.
+#
+# ── How this file is organised ─────────────────────────────────────────────
+#
+# The block at the BOTTOM, between the `scaffold:env` markers, is GENERATED
+# from the config module (<config_module>) — the single place every variable
+# this project reads is declared. Do not edit it by hand: add a field to the
+# config module and run `make env-example`.
+#
+# Everything ABOVE that block is hand-maintained: operator notes and optional
+# add-on wiring for infrastructure the core project does not require.
+#
+#   make env-example   regenerate the managed block
+#   make check-env     fail if the block and the config module disagree
+
+# ── Jupyter authentication (notebook shape only) ──────────────────────────
+# Localhost-first use is tokenless by default. Set a strong token before
+# exposing Jupyter through any reverse proxy; an unauthenticated Jupyter
+# server grants visitors arbitrary code execution inside the container.
+# JUPYTER_TOKEN=
+
+# ── External APIs (replace placeholders with real keys) ────────────────────
+# Prefer the Vault add-on (`--with-vault`) over pasting long-lived keys here:
+# `make secrets-pull` fetches them into .env at mode 0600, and rotation
+# becomes one command instead of an archaeology exercise.
+# OPENAI_API_KEY=replace_me
+# ANTHROPIC_API_KEY=replace_me
+
+# ── Feature flags ──────────────────────────────────────────────────────────
+# ENABLE_DEBUG=false
+
+# ── Vault (only with --with-vault; see vault/README.md) ───────────────────
+# Discovery is by environment variable, never a hardcoded path, so a
+# generated project stays portable and publishable.
+#
+# VAULT_ADDR       Vault API address, e.g. http://127.0.0.1:8200
+# VAULT_ROLE       AppRole this project authenticates as
+# VAULT_KV_MOUNT   KV v2 mount name (default: kv)
+# VAULT_CREDS_DIR  Where role-id/secret-id live (default: ~/.vault)
+#
+# VAULT_ADDR=http://127.0.0.1:8200
+# VAULT_ROLE=<name>
+# VAULT_KV_MOUNT=kv
+
+# ── RAG (only used when scaffolded with --with-rag) ───────────────────────
+# Backend: sqlite (no infrastructure) | remote (operator's vector DB) | both
+RAG_BACKEND=sqlite
+# VECTOR_DB_URL=http://127.0.0.1:6333
+# VECTOR_DB_EMBEDDING_MODEL=bge-m3
+
+# ── Per-project Gitea (only with --with-gitea; AGENTS.md §24) ─────────────
+# Each scaffolded project has its own Gitea container where dispatched
+# sub-agents push their branches and the review agent merges/rejects PRs.
+# `make gitea` starts the container; `make gitea-bootstrap` creates the
+# bot user, API token, and seeds the repo on first run.
+#
+# HTTP + SSH ports (change per project if running multiple on the same host).
+# Note: 2222 commonly collides with operator tools (GitLab, vagrant), so the
+# default is 2230. Only used if you need SSH git access — the bot workflow
+# uses HTTPS + API token and doesn't need this port at all.
+GITEA_HTTP_PORT=3030
+GITEA_SSH_PORT=2230
+#
+# Public URL exposed via your central Caddy reverse proxy. When set, the
+# Gitea container's ROOT_URL uses this, and the bot posts clickable PR
+# URLs in IRC. See gitea/caddy.example for the Caddyfile snippet the
+# operator pastes into their central Caddy config.
+#
+# Convention: `<slug>-git.<your-public-domain>` where <slug> matches the
+# project name AND the IRC channel. Operators who expose openclaw-managed
+# projects under a dedicated .dev zone should set GITEA_PUBLIC_DOMAIN and
+# the scaffold composes GITEA_PUBLIC_URL automatically.
+#
+# GITEA_PUBLIC_DOMAIN=your-dev-zone.example
+# GITEA_PUBLIC_URL=https://<name>-git.your-dev-zone.example
+#
+# These are populated automatically by gitea/bootstrap.sh on first run —
+# don't set them by hand unless you're pointing at a shared upstream Gitea.
+# GITEA_URL=http://127.0.0.1:3030
+# GITEA_API_URL=http://127.0.0.1:3030/api/v1
+# GITEA_TOKEN=
+# GITEA_OWNER=<name>-bot
+# GITEA_REPO=<name>
+# GITEA_BOT_USER=<name>-bot
+# GITEA_BOT_PASSWORD=
+#
+# Optional Gitea security keys (if empty, Gitea generates them on first run)
+# GITEA_SECRET_KEY=
+# GITEA_INTERNAL_TOKEN=
+#
+# Review agent behavior — the bot's review_pr tool reads these
+# GITEA_AUTO_REVIEW=false              # automatically review PRs after dispatch
+# GITEA_AUTO_MERGE_CONFIDENCE=high     # min confidence for auto-merge verdict (high|medium|low)
+# REVIEW_MAX_DIFF_CHARS=40000          # cap diff size sent to the LLM reviewer
+
+# ── Pipeline self-awareness + auto-fix loop (AGENTS.md §24.5) ──────────────
+# The orchestration bot watches Gitea Actions pipelines after opening a PR.
+# If the pipeline fails, it captures the failure as a memory and dispatches
+# a new sub-agent to fix it (up to AUTOFIX_MAX_ATTEMPTS times, tracked in
+# the root sub_agent_run memory). Review agent blocks merges on red pipelines.
+# PIPELINE_WAIT_TIMEOUT=600            # max seconds to wait for a pipeline to finish
+# PIPELINE_POLL_INTERVAL=15            # seconds between pipeline status polls
+# AUTOFIX_MAX_ATTEMPTS=3               # circuit breaker: max auto-fix dispatches per root task
+#
+# Gitea Actions runner token — populated by gitea/bootstrap.sh on first run.
+# GITEA_RUNNER_TOKEN=
+# GITEA_RUNNER_NAME=<name>-runner
+
+# ── Memory: two-tier (project-local + long-term cross-project) ─────────────
+# Project memories live in memory/ (committed). The long-term store is
+# optional — if set, the bot can query cross-project lessons via the
+# read_memory_longterm tool, and `make memory-promote` pushes vetted project
+# memories to the shared store. See AGENTS.md §23 for the full flow.
+#
+# MEMORY_STORE_URL=http://127.0.0.1:7140
+# MEMORY_STORE_API_KEY=
+# Auto-promote high-confidence memories without waiting for operator review
+# (leave false in production — review gate catches bad promotions).
+# MEMORY_AUTO_PROMOTE=false
+# Minimum confidence required for auto-promote (high | medium | low)
+# MEMORY_MIN_CONFIDENCE=high
+
+# ── Docker networks the containers join ────────────────────────────────────
+# These are DOCKER NETWORK NAMES, not hostnames. The compose files refer to
+# them by a fixed alias (irc_default, rag_network) and map the alias onto the
+# real network via `name:`. If a stack fails to start with
+#   "network X declared as external, but could not be found"
+# the value here does not match a real network. List them with:
+#   docker network ls
+# IRC_NETWORK=irc-server_default
+# RAG_NETWORK=production-agentic-rag-course_rag-network
+
+# ── IRC bot (only with --with-bot; see AGENTS.md §22) ─────────────────────
+# All of these are operator-supplied. They are ignored unless the bot add-on
+# was explicitly included.
+#
+# IRC_SERVER=irc.example.com
+# IRC_PORT=6667
+# IRC_TLS=false
+# IRC_NICK=<name>-bot
+# IRC_CHANNEL=#<name>
+# IRC_PASSWORD=
+# AGENTS_CHANNEL=#agents
+# ADVISOR_CHANNEL=#devs
+# ADVISOR_NICK=design-advisor
+
+# LLM endpoint for the bot's tool-calling loop (OpenAI-compatible):
+# works with Ollama, llm-router, llama.cpp, vLLM, LiteLLM, real OpenAI, etc.
+# LLM_ROUTER_URL=https://openrouter.ai/api/v1
+# LLM_MODEL=nvidia/nemotron-3-super-120b-a12b:free
+# LLM_API_KEY=
+
+
+# ── Bot agent dispatch (only with --with-bot) ──────────────────────────────
+# The bot can dispatch coding agents to complete tasks on throwaway git
+# branches. Sub-agents ALWAYS run inside a hard-isolated Docker sandbox
+# (AGENTS.md §22): only the project root is mounted, no network access by
+# default, read-only rootfs, cpu/memory capped, no host credentials. If the
+# sub-agent needs something beyond the project folder, the ORCHESTRATION
+# bot composes the needed capability from its own tools — the sub-agent
+# never reaches out directly.
+#
+# Configure by picking a runner:
+#     AGENT_DISPATCHER=cursor      && AGENT_COMMAND=./bot/runners/cursor.sh
+#     AGENT_DISPATCHER=claude-code && AGENT_COMMAND=./bot/runners/claude_code.sh
+#     AGENT_DISPATCHER=aider       && AGENT_COMMAND=./bot/runners/aider.sh
+#     AGENT_DISPATCHER=custom      && AGENT_COMMAND=./bot/runners/custom.sh
+#
+# Leave empty to disable agent dispatch entirely.
+# AGENT_DISPATCHER=
+# AGENT_COMMAND=
+# AGENT_MAX_CONCURRENT=3
+# AGENT_TIMEOUT_S=1800
+# AGENT_BRANCH_PREFIX=bot/
+
+# ── Sandbox isolation for dispatched sub-agents (AGENTS.md §22) ────────────
+# AGENT_SANDBOX=docker (default) wraps every sub-agent dispatch in a
+# locked-down container. AGENT_SANDBOX=none disables the sandbox — ONLY
+# use this for local development. Production ALWAYS uses docker.
+# AGENT_SANDBOX=docker
+#
+# Required when AGENT_SANDBOX=docker — the image containing your coding
+# agent CLI. Operator builds this once per agent flavor:
+#     docker build -t ghcr.io/you/agent-sandbox-cursor:latest \
+#                  -f bot/sandbox/cursor.Dockerfile .
+# AGENT_SANDBOX_IMAGE=ghcr.io/you/agent-sandbox:latest
+#
+# Network isolation level: none (default, no outbound) | host (dev) |
+# bridge | a custom docker network. 'none' is the strict default — if the
+# sub-agent needs LLM access, either bake a local model into the sandbox
+# image or use a restricted bridge with an egress proxy pointing only at
+# the LLM endpoint.
+# AGENT_SANDBOX_NETWORK=none
+#
+# Resource caps
+# AGENT_SANDBOX_CPUS=2
+# AGENT_SANDBOX_MEMORY=2g
+#
+# Env var whitelist (only these are forwarded into the sandbox — everything
+# else is stripped so operator secrets don't leak in)
+# AGENT_SANDBOX_FORWARD_ENV=OPENAI_API_KEY,ANTHROPIC_API_KEY,OPENAI_BASE_URL,LLM_ROUTER_URL,LLM_MODEL
+
+# ── AI code review (only with --with-review; see review/README.md) ────────
+# An OpenAI- or Anthropic-compatible endpoint. Any provider speaking that
+# protocol works, including a local vLLM/Ollama server — which keeps your
+# code on your own hardware.
+#
+# OCR_LLM_URL=https://api.openai.com/v1/chat/completions
+# OCR_LLM_AUTH_TOKEN=replace_me
+# OCR_LLM_MODEL=gpt-4o
+# OCR_USE_ANTHROPIC=false
+#
+# Lowest severity that fails the job: critical | high | medium | low | none.
+# Defaults to critical, so red always means something — see review/README.md.
+# OCR_FAIL_ON=critical

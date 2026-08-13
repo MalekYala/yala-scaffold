@@ -1,0 +1,86 @@
+{
+  "project": "<name>",
+  "shape": "report",
+  "kpis": [
+    {
+      "name": "last_build_success",
+      "kpi_type": "boolean",
+      "unit": "bool",
+      "direction": "higher",
+      "target": 1,
+      "interval_s": 300,
+      "source": {
+        "type": "shell",
+        "cmd": "python3 -c \"import json; print(1 if json.load(open('outputs/manifest.json')).get('success') else 0)\" 2>/dev/null || echo 0"
+      },
+      "description": "Did the most recent generate_report.py run finish successfully?"
+    },
+    {
+      "name": "locales_built",
+      "kpi_type": "gauge",
+      "unit": "count",
+      "direction": "higher",
+      "target": 2,
+      "interval_s": 300,
+      "source": {
+        "type": "shell",
+        "cmd": "python3 -c \"import json; print(len(json.load(open('outputs/manifest.json')).get('locales', [])))\" 2>/dev/null || echo 0"
+      },
+      "description": "How many languages the latest build produced artifacts for"
+    },
+    {
+      "name": "pdf_size_bytes_en",
+      "kpi_type": "gauge",
+      "unit": "bytes",
+      "direction": "higher",
+      "interval_s": 300,
+      "source": {
+        "type": "shell",
+        "cmd": "stat -c %s outputs/report_en.pdf 2>/dev/null || stat -f %z outputs/report_en.pdf 2>/dev/null || echo 0"
+      },
+      "description": "Size of the generated English PDF report"
+    },
+    {
+      "name": "build_freshness_s",
+      "kpi_type": "gauge",
+      "unit": "seconds",
+      "direction": "lower",
+      "target": 86400,
+      "interval_s": 300,
+      "source": {
+        "type": "shell",
+        "cmd": "python3 -c \"import os, time; print(int(time.time() - os.path.getmtime('outputs/manifest.json')))\" 2>/dev/null || echo 999999"
+      },
+      "description": "Seconds since the last successful report build"
+    },
+    {
+      "name": "build_duration_ms",
+      "kpi_type": "gauge",
+      "unit": "ms",
+      "direction": "lower",
+      "interval_s": 300,
+      "source": {
+        "type": "metric_log_grep",
+        "log_file": "logs/generate_report.log",
+        "pattern": "phase=total duration_ms=(\\d+)",
+        "window_s": 86400,
+        "aggregate": "max"
+      },
+      "description": "Most recent build duration across all locales"
+    },
+    {
+      "name": "qa_score",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": 1.0,
+      "interval_s": 300,
+      "source": {
+        "type": "shell",
+        "cmd": "./metric.sh",
+        "timeout_s": 60
+      },
+      "description": "qa_check.py pass ratio"
+    }
+  ]
+}

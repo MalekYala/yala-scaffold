@@ -1,0 +1,46 @@
+{
+  "project": "<name>",
+  "shape": "agent",
+  "$comment": [
+    "Quality and cost are tracked together on purpose. An agent that answers",
+    "better by taking three times as many steps is usually not an improvement,",
+    "and KPIs that omit step count let that trade happen unnoticed."
+  ],
+  "kpis": [
+    {
+      "name": "graph_health",
+      "kpi_type": "float", "unit": "ratio", "direction": "higher", "target": 1.0,
+      "interval_s": 300,
+      "source": { "type": "shell", "cmd": "./metric.sh", "timeout_s": 60 },
+      "description": "Offline structural checks passing: graph, tools, scenarios, termination. Free to measure."
+    },
+    {
+      "name": "eval_pass_rate",
+      "kpi_type": "float", "unit": "ratio", "direction": "higher", "target": 0.9,
+      "interval_s": 86400,
+      "source": { "type": "shell", "cmd": "python3 -c \"import json;print(json.load(open('eval/reports/latest.json'))['summary']['pass_rate'])\" 2>/dev/null || echo 0" },
+      "description": "Live-model case pass rate from the last `make evaluate`. Daily, because it costs tokens."
+    },
+    {
+      "name": "tool_precision",
+      "kpi_type": "float", "unit": "ratio", "direction": "higher", "target": 0.9,
+      "interval_s": 86400,
+      "source": { "type": "shell", "cmd": "python3 -c \"import json;print(json.load(open('eval/reports/latest.json'))['summary']['tool_precision'])\" 2>/dev/null || echo 0" },
+      "description": "Expected tool calls over actual. Falls when the agent flails, which a pass rate alone hides."
+    },
+    {
+      "name": "avg_steps",
+      "kpi_type": "gauge", "unit": "steps", "direction": "lower", "target": 6,
+      "interval_s": 86400,
+      "source": { "type": "shell", "cmd": "python3 -c \"import json;print(json.load(open('eval/reports/latest.json'))['summary']['avg_steps'])\" 2>/dev/null || echo 999" },
+      "description": "Mean graph steps per case — the closest cheap proxy for cost per run"
+    },
+    {
+      "name": "recursion_aborts",
+      "kpi_type": "gauge", "unit": "count", "direction": "lower", "target": 0,
+      "interval_s": 3600,
+      "source": { "type": "metric_log_grep", "log_file": "logs/agent.log", "pattern": "GraphRecursionError", "window_s": 86400, "aggregate": "count" },
+      "description": "Runs that hit the recursion limit. Non-zero means the agent is looping in production."
+    }
+  ]
+}

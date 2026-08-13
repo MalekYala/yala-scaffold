@@ -1,0 +1,21 @@
+{
+  "$comment": [
+    "The output contract for <name>: what a valid model response looks like.",
+    "",
+    "Declared as data because three different things need to agree on it —",
+    "preflight.py (reject bad training targets), evaluate.py (score per field),",
+    "and whatever consumes the model in production. When they disagree, you get",
+    "a model that scores well and breaks downstream.",
+    "",
+    "format: 'json' scores per-key and counts parse failures separately.",
+    "        'text' falls back to exact match only.",
+    "",
+    "Replace this with your task's real contract."
+  ],
+  "format": "json",
+  "required_keys": ["label", "confidence"],
+  "enums": {
+    "label": ["bug", "feature_request", "question", "billing", "unknown"],
+    "confidence": ["high", "medium", "low"]
+  }
+}

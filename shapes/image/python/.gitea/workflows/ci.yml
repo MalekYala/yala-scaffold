@@ -1,0 +1,21 @@
+name: <name> CI (image, python)
+
+on:
+  push:
+    branches: [main, "bot/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test
+        run: docker build --target test --tag <name>-test .
+      - name: Run tests with restricted privileges
+        run: docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev,size=128m <name>-test
+      - name: Lint
+        run: docker build --target lint --tag <name>-lint . && docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev,size=128m <name>-lint
+      - name: Typecheck
+        run: docker build --target typecheck --tag <name>-typecheck . && docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,noexec,nosuid,nodev,size=128m <name>-typecheck

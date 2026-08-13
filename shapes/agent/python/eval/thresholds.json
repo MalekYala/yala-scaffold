@@ -1,0 +1,21 @@
+{
+  "$comment": [
+    "Ship criteria for <name>, checked by evaluate.py against the latest run.",
+    "",
+    "Set these BEFORE changing a prompt or swapping a model, and commit them.",
+    "Deciding what counts as good enough after seeing the number is how a",
+    "regression ships with a rationalisation attached.",
+    "",
+    "tool_precision matters as much as pass rate: an agent that reaches the",
+    "right answer by calling four tools when one would do is slower, more",
+    "expensive, and more likely to go wrong on the next input."
+  ],
+  "thresholds": [
+    { "metric": "summary.pass_rate", "direction": "min", "value": 0.75,
+      "note": "fraction of cases meeting every expectation" },
+    { "metric": "summary.tool_precision", "direction": "min", "value": 0.8,
+      "note": "expected tool calls / actual tool calls — catches flailing" },
+    { "metric": "summary.avg_steps", "direction": "max", "value": 6,
+      "note": "mean graph steps per case; rising steps means rising cost" }
+  ]
+}

@@ -1,0 +1,2 @@
+# Auto-populated by bot/tools/watch_pipeline.py when a Gitea Actions
+# pipeline fails on a dispatched PR. Don't write files here by hand.

@@ -1,0 +1,117 @@
+services:
+  # ── Default service: dataset, evaluation, QA gate ───────────────────────
+  # Light image, no GPU, runs anywhere. This is what `make setup`, `make run`,
+  # `make test` and `make qa` use.
+  <name>:
+    build:
+      context: .
+      target: runtime
+      args:
+        APP_UID: "${HOST_UID:-1000}"
+        APP_GID: "${HOST_GID:-1000}"
+        VERSION: "${VERSION:-0.0.0-dev}"
+    image: <name>:latest
+    container_name: <name>
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777
+    restart: "no"
+    env_file: .env
+    volumes:
+      - ./dataset:/app/dataset:Z
+      - ./eval:/app/eval:Z
+      - ./outputs:/app/outputs:Z
+    mem_limit: 2g
+    cpus: 4
+
+  # ── Training ────────────────────────────────────────────────────────────
+  # Behind a profile so it is never built or started by default: the image is
+  # multi-gigabyte and needs a GPU. `make train` brings it up explicitly.
+  #
+  # GPU access is a real privilege escalation relative to the rest of this
+  # kit — the container gets direct access to the device. It is opt-in, scoped
+  # to this one service, and the reason `train` is not part of `make setup`.
+  <name>-train:
+    profiles: ["train"]
+    build:
+      context: .
+      target: train
+      args:
+        APP_UID: "${HOST_UID:-1000}"
+        APP_GID: "${HOST_GID:-1000}"
+    image: <name>-train:latest
+    container_name: <name>-train
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: "no"
+    env_file: .env
+    volumes:
+      - ./dataset:/app/dataset:ro,Z
+      - ./output:/app/output:Z
+      # Model weights and the HF cache are large and must survive a rebuild.
+      # Point MODEL_CACHE at a disk with room — base models run to tens of GB.
+      - ${MODEL_CACHE:-./data}:/data:Z
+    shm_size: "2gb"
+    # Requires the NVIDIA Container Toolkit on the host. Without it this
+    # service fails to start; the rest of the project is unaffected.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${GPU_COUNT:-1}
+              capabilities: [gpu]
+
+  # ── Serving ─────────────────────────────────────────────────────────────
+  # vLLM behind an OpenAI-compatible API, so `evaluate.py` scores the thing you
+  # would actually route traffic to rather than a checkpoint on disk.
+  # Also behind a profile: it needs the GPU and a merged model to exist.
+  <name>-serve:
+    profiles: ["serve"]
+    image: vllm/vllm-openai:v0.6.4
+    container_name: <name>-serve
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./output:/models:ro,Z
+      - ${MODEL_CACHE:-./data}:/data:Z
+    ports:
+      # Localhost only, like every other service in this kit.
+      - "127.0.0.1:${SERVE_PORT:-8000}:8000"
+    command:
+      - --model
+      - ${SERVE_MODEL_PATH:-/models/merged}
+      - --served-model-name
+      - <name>
+      - --max-model-len
+      - "${SERVE_MAX_LEN:-4096}"
+      - --gpu-memory-utilization
+      - "${SERVE_GPU_FRACTION:-0.90}"
+    shm_size: "4gb"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 180s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${GPU_COUNT:-1}
+              capabilities: [gpu]

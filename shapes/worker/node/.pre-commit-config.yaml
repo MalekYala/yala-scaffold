@@ -1,0 +1,69 @@
+# pre-commit hooks for <name>.
+#
+# Installs git hooks that mirror the CI pipeline but run locally before
+# you push. Node shapes use eslint + prettier (via local hooks) rather
+# than a repo-hosted hook because the ESLint config lives in package.json.
+#
+# Install once after cloning:
+#
+#     npm install
+#     pip install pre-commit     # pre-commit itself is a Python tool
+#     pre-commit install
+#     pre-commit install --hook-type pre-push
+#
+# Run manually:
+#
+#     pre-commit run --all-files
+#     pre-commit run --all-files --hook-stage pre-push
+
+default_stages: [pre-commit]
+
+repos:
+  # ── Gitleaks: secret scanner ───────────────────────────────────────────
+  # Matches the CI secret-scan job. Blocks commits that would leak API
+  # keys, tokens, .pem files, etc. Reads .gitleaks.toml for the rule set.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+
+  # ── Built-in: whitespace / EOF / YAML sanity ───────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--unsafe]
+      - id: check-json
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+
+  # ── ESLint: catches the small suspicious JS/TS mistakes ───────────────
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: npx eslint
+        language: system
+        types_or: [javascript, jsx, ts, tsx]
+        require_serial: false
+
+  # ── Prettier: format (mirrors CI expectation) ─────────────────────────
+      - id: prettier
+        name: prettier (check)
+        entry: npx prettier --check
+        language: system
+        types_or: [javascript, jsx, ts, tsx, json, yaml, css, markdown]
+        require_serial: false
+
+  # ── Test suite at pre-push ─────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: npm-test
+        name: npm test
+        entry: npm test
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

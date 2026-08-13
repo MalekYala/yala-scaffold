@@ -1,0 +1,22 @@
+{
+  "$comment": [
+    "The case that catches naive automation: a FAILED login still renders a",
+    "page with a 200 status. A workflow that only checks 'navigation succeeded'",
+    "sails straight past it and reports success while being signed out.",
+    "",
+    "So this asserts on the signed-in state, not on the navigation."
+  ],
+  "name": "login",
+  "description": "Sign in and verify the authenticated state, not merely the page load",
+  "timeout_ms": 10000,
+  "steps": [
+    { "action": "goto", "url": "/login.html" },
+    { "action": "assert_text", "selector": "#title", "expect": "Sign in" },
+    { "action": "fill", "selector": "#user", "value": "demo" },
+    { "action": "fill", "selector": "#pass", "value": "demo" },
+    { "action": "click", "selector": "#submit" },
+    { "action": "wait_for", "selector": "#welcome", "state": "visible" },
+    { "action": "assert_text", "selector": "#who", "expect": "demo" },
+    { "action": "assert_visible", "selector": "#welcome" }
+  ]
+}

@@ -1,0 +1,4 @@
+# Playwright ships browser builds for linux x86_64 and aarch64 alike, so this
+# shape works on both. The browser itself is downloaded at image build time
+# (see Dockerfile), not vendored.
+playwright==1.56.0

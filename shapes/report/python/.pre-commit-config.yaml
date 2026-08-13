@@ -1,0 +1,83 @@
+# pre-commit hooks for <name>.
+#
+# Installs git hooks that mirror the CI pipeline but run locally before
+# you push, so most mistakes are caught within seconds instead of waiting
+# ~2 minutes for a runner. The dev loop ends up being:
+#
+#     save                IDE extensions (ruff, mypy)
+#     git commit          pre-commit hooks (ruff check, ruff format, gitleaks)
+#     git push            pre-push hooks  (mypy, pytest)
+#     runner pickup       full CI: lint → typecheck → secret-scan → build → test
+#
+# Install once after cloning:
+#
+#     pip install -r requirements-dev.txt
+#     pre-commit install
+#     pre-commit install --hook-type pre-push
+#
+# Run manually across the whole tree:
+#
+#     pre-commit run --all-files
+#     pre-commit run --all-files --hook-stage pre-push
+
+default_stages: [pre-commit]
+
+repos:
+  # ── Ruff: linter + formatter ───────────────────────────────────────────
+  # Uses the rule set + line-length configured in pyproject.toml. Runs on
+  # every commit — catches unused imports, dead code, format drift.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
+  # ── Gitleaks: secret scanner ───────────────────────────────────────────
+  # Matches the CI secret-scan job. Blocks commits that would leak API
+  # keys, tokens, .pem files, etc. Reads .gitleaks.toml for the rule set.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+
+  # ── Built-in: whitespace / EOF / YAML sanity ───────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--unsafe]  # allow Gitea Actions tags like !reference
+      - id: check-json
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+      - id: debug-statements
+
+  # ── Mypy: static type checker (pre-push only — too slow for every commit) ──
+  # Runs at pre-push rather than pre-commit because mypy on a cold cache
+  # can take 5-10 seconds and that's annoying to hit on every tiny commit.
+  # Pre-push strikes the right balance: you still catch type errors before
+  # they reach the remote, but small local commits stay fast.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (strict)
+        entry: mypy
+        language: system
+        types: [python]
+        pass_filenames: false
+        args: ["."]
+        stages: [pre-push]
+
+  # ── Pytest: run the test suite at pre-push (also pre-push only) ────────
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: pytest
+        language: system
+        pass_filenames: false
+        args: ["-q"]
+        stages: [pre-push]

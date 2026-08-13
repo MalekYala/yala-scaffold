@@ -1,0 +1,36 @@
+{
+  "project": "<name>",
+  "shape": "mcp",
+  "kpis": [
+    {
+      "name": "tools_exposed",
+      "kpi_type": "gauge",
+      "unit": "count",
+      "direction": "higher",
+      "target": 1,
+      "interval_s": 300,
+      "source": { "type": "shell", "cmd": "python3 -c \"import json,subprocess;print(len(json.loads(subprocess.run(['python3','qa_check.py'],capture_output=True,text=True).stdout)['checks']))\" 2>/dev/null || echo 0" },
+      "description": "Tools the running server exposes. Zero means the server is useless, however healthy the process looks."
+    },
+    {
+      "name": "contract_score",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": 1.0,
+      "interval_s": 300,
+      "source": { "type": "shell", "cmd": "./metric.sh", "timeout_s": 60 },
+      "description": "Fraction of MCP contract checks passing"
+    },
+    {
+      "name": "handshake_ms",
+      "kpi_type": "gauge",
+      "unit": "ms",
+      "direction": "lower",
+      "target": 2000,
+      "interval_s": 300,
+      "source": { "type": "metric_log_grep", "log_file": "logs/qa.log", "pattern": "phase=qa_check duration_ms=(\\d+)", "window_s": 3600, "aggregate": "max" },
+      "description": "Time to complete the full contract check, handshake included"
+    }
+  ]
+}

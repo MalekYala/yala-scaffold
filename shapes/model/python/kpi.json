@@ -1,0 +1,70 @@
+{
+  "project": "<name>",
+  "shape": "model",
+  "$comment": [
+    "Accuracy and latency are tracked together on purpose. A model two points",
+    "more accurate and three times slower is usually a regression, and KPIs",
+    "that omit latency let that trade happen unnoticed."
+  ],
+  "kpis": [
+    {
+      "name": "eval_exact_match",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": 0.9,
+      "interval_s": 3600,
+      "source": { "type": "shell", "cmd": "./metric.sh", "timeout_s": 120 },
+      "description": "Primary evaluation accuracy from the latest eval report"
+    },
+    {
+      "name": "parse_error_rate",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "lower",
+      "target": 0.0,
+      "interval_s": 3600,
+      "source": {
+        "type": "shell",
+        "cmd": "python3 -c \"import json;print(json.load(open('eval/reports/latest.json'))['summary']['parse_error_rate'])\" 2>/dev/null || echo 1.0"
+      },
+      "description": "Fraction of outputs the consumer could not parse. Never acceptable above zero."
+    },
+    {
+      "name": "eval_p95_latency_ms",
+      "kpi_type": "gauge",
+      "unit": "ms",
+      "direction": "lower",
+      "target": 3000,
+      "interval_s": 3600,
+      "source": {
+        "type": "shell",
+        "cmd": "python3 -c \"import json;print(json.load(open('eval/reports/latest.json'))['summary']['latency_ms']['p95'])\" 2>/dev/null || echo 999999"
+      },
+      "description": "Tail latency as served"
+    },
+    {
+      "name": "eval_freshness_s",
+      "kpi_type": "gauge",
+      "unit": "seconds",
+      "direction": "lower",
+      "target": 604800,
+      "interval_s": 3600,
+      "source": {
+        "type": "shell",
+        "cmd": "python3 -c \"import os,time;print(int(time.time()-os.path.getmtime('eval/reports/latest.json')))\" 2>/dev/null || echo 999999"
+      },
+      "description": "Seconds since the last evaluation. A stale report is an unmeasured model."
+    },
+    {
+      "name": "qa_score",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": 1.0,
+      "interval_s": 3600,
+      "source": { "type": "shell", "cmd": "python3 qa_check.py > /dev/null && echo 1.0 || echo 0.0" },
+      "description": "Does the model clear every committed ship threshold?"
+    }
+  ]
+}

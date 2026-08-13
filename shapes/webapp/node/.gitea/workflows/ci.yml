@@ -1,0 +1,136 @@
+name: <name> CI (webapp, node)
+
+on:
+  push:
+    branches: [main, "bot/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci --no-audit --no-fund
+      - name: ESLint
+        run: npm run lint
+      - name: Prettier --check (if configured)
+        run: |
+          if [ -f .prettierrc ] || [ -f .prettierrc.json ] || [ -f .prettierrc.yaml ] || \
+             grep -q '"prettier"' package.json 2>/dev/null; then
+            npx prettier --check "src/**/*.{js,jsx,ts,tsx,json,css,md}" || true
+          else
+            echo "(no prettier config — skipping)"
+          fi
+  check-i18n-brand:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Validate locales/*.json
+        run: |
+          node -e "
+            const fs = require('fs');
+            const en = JSON.parse(fs.readFileSync('locales/en.json', 'utf8'));
+            const enKeys = new Set();
+            const walk = (o, p='') => { for (const k in o) { const f = p ? p+'.'+k : k; if (typeof o[k]==='object' && o[k]!==null) walk(o[k],f); else enKeys.add(f); }};
+            walk(en);
+            console.log('en.json has', enKeys.size, 'keys');
+            for (const file of fs.readdirSync('locales')) {
+              if (!file.endsWith('.json') || file==='en.json') continue;
+              const other = JSON.parse(fs.readFileSync('locales/'+file,'utf8'));
+              const otherKeys = new Set();
+              walk(other);
+              const missing = [...enKeys].filter(k => !otherKeys.has(k));
+              if (missing.length) console.log('WARN:',file,'missing',missing.length,'keys');
+            }
+          "
+      - name: Validate brand/config.json schema
+        run: |
+          node -e "
+            const b = JSON.parse(require('fs').readFileSync('brand/config.json','utf8'));
+            const required = ['name','display_name','colors','fonts','logo'];
+            const missing = required.filter(k => !(k in b));
+            if (missing.length) { console.error('brand/config.json missing:', missing); process.exit(1); }
+            console.log('brand/config.json ok — display_name:', b.display_name);
+          "
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: gitleaks
+        shell: bash
+        run: |
+          # Install gitleaks CLI directly — gitleaks/gitleaks-action@v2 now
+          # requires a paid GITLEAKS_LICENSE secret, but the underlying CLI
+          # remains open-source under an MIT license.
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64) ARCH=x64 ;;
+            aarch64|arm64) ARCH=arm64 ;;
+          esac
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_${ARCH}.tar.gz" \
+            | tar -xzC /tmp gitleaks
+          /tmp/gitleaks detect --config .gitleaks.toml --no-git --verbose --redact
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, check-i18n-brand, secret-scan]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run unit tests in the image
+        run: |
+          docker build --pull --target test --tag <name>:${{ github.sha }}-test .
+          docker run --rm --init --read-only --network none \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --pids-limit 128 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
+            <name>:${{ github.sha }}-test
+      - name: Build runtime image
+        run: docker build --tag <name>:${{ github.sha }} .
+      - name: Extract dist/ from builder stage
+        run: |
+          docker build --target builder --tag <name>:${{ github.sha }}-builder .
+          docker create --name extract <name>:${{ github.sha }}-builder
+          docker cp extract:/build/dist ./dist || true
+          docker rm extract
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --tag <name>:${{ github.sha }} .
+      - name: Run webapp
+        run: |
+          cp .env.example .env
+          # No -p port mapping: the test uses `docker exec` to reach the
+          # container\'s internal loopback, and binding 127.0.0.1:<PORT> on
+          # the host clashes with any live instance of this service.
+          docker run -d --name <name>-test --env-file .env <name>:${{ github.sha }}
+          for i in $(seq 1 30); do
+            if docker exec <name>-test curl -sf http://127.0.0.1:<PORT>/health > /dev/null 2>&1; then
+              echo "webapp up after ${i}s"; break
+            fi
+            sleep 1
+            if [ "$i" = "30" ]; then docker logs <name>-test; exit 1; fi
+          done
+      - name: Run qa_check.js (verifies brand injection landed)
+        run: docker exec <name>-test node /app/qa_check.js
+      - name: Verify index.html has brand title
+        run: |
+          docker exec <name>-test sh -c "curl -sf http://127.0.0.1:<PORT>/ | grep -q '<title>' && ! curl -sf http://127.0.0.1:<PORT>/ | grep -q '__BRAND_TITLE__'"
+      - name: Teardown
+        if: always()
+        run: |
+          docker logs --tail 200 <name>-test || true
+          docker rm -f <name>-test || true

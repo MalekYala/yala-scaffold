@@ -1,0 +1,44 @@
+# act_runner config for <name>.
+#
+# See: https://gitea.com/gitea/act_runner/src/branch/main/internal/pkg/config/config.example.yaml
+#
+# The critical setting here is `container.network`. act_runner by default
+# creates a fresh bridge network per job, which isolates job containers from
+# the gitea compose network — so steps like `actions/checkout@v4` can't
+# resolve `<name>-gitea` and fail with:
+#     fatal: unable to access 'http://<name>-gitea:3000/...': Could not resolve host
+#
+# Setting `container.network` to the compose network name pins every job
+# container onto the same network as the gitea server so DNS works.
+#
+# Network name format: `<dir>_default` where <dir> is the project directory
+# name as seen by docker compose (yala-smoke → yala-smoke_default).
+
+log:
+  level: info
+
+runner:
+  file: .runner
+  capacity: 1
+  timeout: 3h
+  insecure: false
+  fetch_timeout: 5s
+  fetch_interval: 2s
+
+cache:
+  enabled: true
+  dir: ""
+  host: ""
+  port: 0
+
+container:
+  network: "<name>_default"
+  privileged: false
+  options: ""
+  workdir_parent: ""
+  valid_volumes: []
+  docker_host: ""
+  force_pull: false
+
+host:
+  workdir_parent: ""

@@ -1,0 +1,48 @@
+# ──────────────────────────────────────────────────────────────────────────
+# Operator overrides for <name>.
+#
+# Docker Compose auto-merges this file with docker-compose.yml when both
+# are present. This file is gitignored so it survives PR merges that
+# regenerate docker-compose.yml. Keep host-specific wiring here (custom
+# networks, extra_hosts, local bind mounts, credentials) and let the AI
+# pipeline freely rewrite the tracked compose file.
+#
+# Edit this file — not docker-compose.yml — when you need the container
+# to reach host-bound services (irc-server, mpd, etc.).
+#
+# ⚠ READ BEFORE ADDING `networks:` HERE
+#
+# Compose *replaces* a service's `networks:` list from the override; it does
+# not merge it with the one in docker-compose.yml. Listing two networks here
+# when the tracked file lists three silently detaches the service from the
+# third — the container starts, looks healthy, and cannot resolve one of its
+# dependencies. That failure surfaces later as a DNS error deep in a log.
+#
+# So the networks block below is commented out on purpose. If you enable it,
+# repeat *every* network the service needs, including the ones the tracked
+# compose file already declares.
+# ──────────────────────────────────────────────────────────────────────────
+
+services:
+  <name>:
+    # Let the container reach host-network services via host.docker.internal.
+    # This key merges cleanly, so it is safe to set on its own.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # ── Uncomment to join extra networks ──────────────────────────────────
+    # Remember: this REPLACES the tracked file's list. Copy its entries in.
+    #
+    # networks:
+    #   - default
+    #   - irc_default
+
+# networks:
+#   default:
+#   # `name:` maps this alias onto the real network on this host. Without it,
+#   # compose looks for a network literally called "irc_default" and fails
+#   # with "network irc_default declared as external, but could not be found".
+#   # Find the real name with: docker network ls
+#   irc_default:
+#     external: true
+#     name: ${IRC_NETWORK:-irc-server_default}

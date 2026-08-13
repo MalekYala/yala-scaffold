@@ -1,0 +1,45 @@
+{
+  "project": "<name>",
+  "shape": "notebook",
+  "kpis": [
+    {
+      "name": "notebooks_passing",
+      "kpi_type": "gauge",
+      "unit": "count",
+      "direction": "higher",
+      "interval_s": 3600,
+      "source": {
+        "type": "shell",
+        "cmd": "python3 qa_check.py 2>/dev/null | python3 -c \"import json, sys; d=json.load(sys.stdin); print(sum(1 for c in d['checks'] if c['ok']))\""
+      },
+      "description": "Number of notebooks that executed cleanly in the most recent run"
+    },
+    {
+      "name": "notebooks_failing",
+      "kpi_type": "gauge",
+      "unit": "count",
+      "direction": "lower",
+      "target": 0,
+      "interval_s": 3600,
+      "source": {
+        "type": "shell",
+        "cmd": "python3 qa_check.py 2>/dev/null | python3 -c \"import json, sys; d=json.load(sys.stdin); print(sum(1 for c in d['checks'] if not c['ok']))\""
+      },
+      "description": "Number of notebooks that errored during execution"
+    },
+    {
+      "name": "qa_score",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": 1.0,
+      "interval_s": 3600,
+      "source": {
+        "type": "shell",
+        "cmd": "./metric.sh",
+        "timeout_s": 600
+      },
+      "description": "Fraction of notebooks passing"
+    }
+  ]
+}

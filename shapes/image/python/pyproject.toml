@@ -1,0 +1,120 @@
+# Project metadata + tool configuration for <name>.
+#
+# Consolidates the config for every Python quality tool into one file so
+# the root of the project stays uncluttered. Each [tool.*] block is
+# read by its respective tool:
+#
+#   ruff   — linting + formatting
+#   mypy   — static type checking
+#   pytest — test discovery and defaults
+#
+# See the pipeline walkthrough in docs/ARCHITECTURE.md for where each
+# tool sits in the dev loop (save → commit → push → CI → manual).
+
+[project]
+name = "<name>"
+version = "0.1.0"
+description = "Sandboxed image-to-image web interface"
+requires-python = ">=3.12,<3.13"
+# Runtime deps live in requirements.txt so Docker layer caching stays
+# effective — don't duplicate them here.
+
+[tool.ruff]
+# Leave room for the scaffolded project slug without post-generation reformat drift.
+line-length = 200
+target-version = "py312"
+# Directories ruff should ignore. gitea/data is gitignored anyway but
+# ruff still walks it unless told otherwise. bot/, rag/, scripts/ are
+# shared scaffolding boilerplate dropped by yala.sh — they're
+# checked separately in the scaffold kit itself, not here.
+extend-exclude = [
+    "gitea/data",
+    "gitea/runner-data",
+    "outputs",
+    "results",
+    ".autoresearch",
+    "bot",
+    "rag",
+    "scripts",
+    "AGENTS.md",
+]
+
+[tool.ruff.lint]
+# A deliberately tight default rule set. If a specific rule is too noisy
+# for your project, disable it here rather than silencing it in code.
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes (unused imports, undefined names, etc.)
+    "W",    # pycodestyle warnings
+    "I",    # isort (import ordering)
+    "B",    # flake8-bugbear (likely bugs)
+    "UP",   # pyupgrade (modern Python idioms)
+    "SIM",  # flake8-simplify
+    "C4",   # flake8-comprehensions
+    "PIE",  # flake8-pie
+    "RUF",  # ruff's own rules
+]
+ignore = [
+    "E501",  # line too long — handled by the formatter
+    "B008",  # do not perform function calls in argument defaults (common FastAPI pattern)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",  # assert — tests legitimately use assert
+]
+
+[tool.ruff.format]
+# Match Black's defaults so there's no format debate.
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+[tool.mypy]
+# Full strictness on new scaffolds — the Reid-inspired philosophy is that
+# type errors should be caught at push time, not in production.
+# Ratchet down individual flags if you need to incrementally adopt types
+# in an older codebase.
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+# Third-party libraries often don't ship stubs — don't fail on those.
+ignore_missing_imports = true
+# The bot/runners/ scripts aren't part of the service surface area; skip.
+exclude = [
+    "^bot/",
+    "^rag/",
+    "^gitea/",
+    "^scripts/",
+]
+
+[[tool.mypy.overrides]]
+# Tests can be looser — fixtures and mocks aren't always fully typed.
+module = "tests.*"
+disallow_untyped_defs = false
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+# Keep third-party deprecations visible without turning every warning into a
+# test failure. Strict marker/config validation still catches pytest mistakes.
+filterwarnings = [
+    "default",
+]
+addopts = [
+    "-ra",           # show short summary for all but passed tests
+    "--strict-markers",
+    "--strict-config",
+]

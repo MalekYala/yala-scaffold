@@ -1,0 +1,36 @@
+{
+  "name": "<name>",
+  "version": "0.1.0",
+  "description": "TODO: describe <name>",
+  "type": "module",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "node scripts/build.js",
+    "preview": "vite preview --host 0.0.0.0",
+    "start": "node server.js",
+    "typecheck": "node --check server.js && node --check scripts/build.js && node --check vite.config.js && node --check src/i18n.js && node --check qa_check.js",
+    "qa": "node qa_check.js",
+    "lint": "eslint src/ scripts/ server.js vite.config.js qa_check.js",
+    "test": "node --test tests/server.test.js"
+  },
+  "dependencies": {
+    "@fastify/static": "^7.0.4",
+    "dotenv": "^16.4.5",
+    "fastify": "^4.28.1",
+    "i18next": "^23.14.0",
+    "i18next-browser-languagedetector": "^8.0.0",
+    "i18next-http-backend": "^2.6.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-i18next": "^15.0.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "eslint": "^9.9.0",
+    "vite": "^5.4.2"
+  }
+}

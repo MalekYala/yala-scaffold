@@ -1,0 +1,42 @@
+{
+  "app": {
+    "title": "<name>",
+    "tagline": "One-line tagline for marketing — replace me",
+    "welcome": "Welcome to {{name}}",
+    "loading": "Loading…",
+    "error": "Something went wrong"
+  },
+  "nav": {
+    "home": "Home",
+    "about": "About",
+    "docs": "Documentation",
+    "contact": "Contact"
+  },
+  "actions": {
+    "submit": "Submit",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "close": "Close",
+    "retry": "Retry"
+  },
+  "status": {
+    "ok": "OK",
+    "warning": "Warning",
+    "error": "Error",
+    "pending": "Pending",
+    "success": "Success"
+  },
+  "errors": {
+    "not_found": "Page not found",
+    "unauthorized": "You are not authorized to view this page",
+    "server_error": "Server error — please try again later",
+    "validation_failed": "Please check your input and try again"
+  },
+  "footer": {
+    "copyright": "© {{year}} {{company}}. All rights reserved.",
+    "privacy": "Privacy",
+    "terms": "Terms"
+  }
+}

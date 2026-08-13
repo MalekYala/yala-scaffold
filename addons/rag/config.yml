@@ -1,0 +1,98 @@
+# RAG config for <name>.
+#
+# Declarative description of what this project's RAG indexes and how.
+# Consumed by rag/index.py (the indexer) and bot/tools/local_rag.py (the
+# query-time retriever).
+
+project: <name>
+
+# ── Sources — what gets indexed ────────────────────────────────────────────
+# Each entry is either a single `path:` or a glob `pattern:`. Order matters
+# only for display — indexing walks all entries.
+sources:
+  - path: README.md
+    type: markdown
+  - path: STRATEGY.md
+    type: markdown
+  - path: AGENTS.md
+    type: markdown
+  - path: CHANGELOG.md
+    type: markdown
+  - pattern: "docs/**/*.md"
+    type: markdown
+  - pattern: "content/**/*.md"   # report shape content
+    type: markdown
+  - pattern: "memory/**/*.md"    # project learnings (AGENTS.md §23)
+    type: memory
+  - path: kpi.json
+    type: json
+  - pattern: "locales/*.json"
+    type: json
+  - path: brand/config.json
+    type: json
+  # Source code — pick up anything that might be queried semantically
+  - pattern: "**/*.py"
+    type: code
+  - pattern: "**/*.js"
+    type: code
+  - pattern: "**/*.jsx"
+    type: code
+  - pattern: "**/*.ts"
+    type: code
+  - pattern: "**/*.tsx"
+    type: code
+  - pattern: "**/*.sh"
+    type: code
+  - pattern: "**/*.sql"
+    type: code
+
+# ── Ignore patterns (applied in addition to .gitignore) ────────────────────
+ignore:
+  - "node_modules/"
+  - "dist/"
+  - "outputs/"
+  - "state/"
+  - "results/"
+  - ".venv/"
+  - "venv/"
+  - "__pycache__/"
+  - ".git/"
+  - ".pytest_cache/"
+  - "data/rag.sqlite*"         # the RAG index itself
+  - ".env"
+  - "LOCAL.md"
+  - "qa_check_output.*"
+  - "memory/_relevant-for-*.md"  # pre-flight briefs are transient
+
+# ── Backend — where the indexed chunks live ───────────────────────────────
+# `sqlite` needs no infrastructure (ships with Python). `remote` connects
+# to the operator's existing vector DB and gets a dedicated collection per
+# project so project bots can do semantic search.
+backend:
+  # Override at runtime via RAG_BACKEND env var: sqlite | remote | both
+  type: "${RAG_BACKEND:-sqlite}"
+
+  sqlite:
+    path: data/rag.sqlite
+    # SQLite FTS5 full-text search — keyword-only, no embeddings needed
+    fts_table: rag_chunks
+
+  remote:
+    url: "${VECTOR_DB_URL}"
+    collection: "proj_<name>_code"
+    embedding_model: "${VECTOR_DB_EMBEDDING_MODEL:-bge-m3}"
+    dim: 1024
+
+# ── Chunking ──────────────────────────────────────────────────────────────
+chunk:
+  max_chars: 1200
+  overlap: 200
+  # Don't split markdown headings across chunks when possible
+  respect_headings: true
+
+# ── Query-time defaults ───────────────────────────────────────────────────
+retrieval:
+  top_k: 5
+  # Minimum similarity score for the vector backend (0.0–1.0). Below this, results
+  # are considered too loose to return.
+  min_score: 0.35

@@ -1,0 +1,22 @@
+; Godot project for <name>.
+;
+; Kept minimal and text-first on purpose: everything here is diffable, which is
+; what lets `qa_check.py` verify scene and resource integrity without opening
+; an editor. Binary scene formats make that impossible and make review guesswork.
+
+config_version=5
+
+[application]
+config/name="<name>"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.3")
+
+[rendering]
+; Headless CI has no GPU. The renderer is only selected when a window exists,
+; so this costs nothing in `--headless` runs.
+renderer/rendering_method="gl_compatibility"
+
+[physics]
+; Fixed timestep. A variable step makes a simulation non-reproducible, which
+; breaks replays, netcode and save compatibility — see scripts/sim.gd.
+common/physics_ticks_per_second=60

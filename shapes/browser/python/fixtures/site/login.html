@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Fixture — sign in</title></head>
+<body>
+  <h1 id="title">Sign in</h1>
+  <form id="login">
+    <input id="user" name="user" placeholder="user">
+    <input id="pass" name="pass" type="password" placeholder="password">
+    <button id="submit" type="button">Sign in</button>
+  </form>
+  <div id="error" hidden role="alert">Invalid credentials</div>
+  <div id="welcome" hidden>Signed in as <span id="who"></span></div>
+<script>
+document.querySelector('#submit').addEventListener('click', () => {
+  const u = document.querySelector('#user').value;
+  const p = document.querySelector('#pass').value;
+  setTimeout(() => {
+    if (u === 'demo' && p === 'demo') {
+      document.querySelector('#who').textContent = u;
+      document.querySelector('#welcome').hidden = false;
+      document.querySelector('#error').hidden = true;
+    } else {
+      // The interesting case: a *failed* login still renders a page with a
+      // 200 status. A workflow that only checks navigation succeeded will
+      // sail past this and report success.
+      document.querySelector('#error').hidden = false;
+      document.querySelector('#welcome').hidden = true;
+    }
+  }, 250);
+});
+</script>
+</body></html>

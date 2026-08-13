@@ -1,0 +1,44 @@
+{
+  "$comment": [
+    "Cases for evaluating a REAL model, scored by evaluate.py.",
+    "",
+    "Distinct from scenarios.json, which scripts the model to test the graph.",
+    "These leave the model free and ask whether it behaves — did it reach for",
+    "the right tool, did it avoid inventing an answer, did it stay within a",
+    "sensible number of steps.",
+    "",
+    "Needs a model endpoint and costs tokens, so it is opt-in: `make evaluate`.",
+    "The offline checks in qa_check.py run on every commit; this runs when you",
+    "have changed the prompt, the tools or the model."
+  ],
+  "cases": [
+    {
+      "name": "arithmetic_uses_the_tool",
+      "input": "What is 47 plus 95? Use your tools.",
+      "expect_tools": ["add"],
+      "expect_contains": "142",
+      "max_steps": 6
+    },
+    {
+      "name": "lookup_uses_the_tool",
+      "input": "Look up the key 'capital-of-france'.",
+      "expect_tools": ["lookup"],
+      "expect_contains": "Paris",
+      "max_steps": 6
+    },
+    {
+      "name": "admits_a_miss",
+      "input": "Look up the key 'definitely-not-present'. If it is not there, say so.",
+      "expect_tools": ["lookup"],
+      "expect_contains": "not found",
+      "max_steps": 6
+    },
+    {
+      "name": "no_tool_needed",
+      "input": "Reply with exactly the word: acknowledged",
+      "expect_tools": [],
+      "expect_contains": "acknowledged",
+      "max_steps": 4
+    }
+  ]
+}

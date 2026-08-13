@@ -1,0 +1,83 @@
+{
+  "project": "<name>",
+  "shape": "backtest",
+  "kpis": [
+    {
+      "name": "win_rate",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": 0.55,
+      "interval_s": 3600,
+      "source": {
+        "type": "shell",
+        "cmd": "python3 -c \"import json; print(json.load(open('results/metrics.json'))['win_rate'])\""
+      },
+      "description": "Fraction of trades with positive PnL in the latest backtest"
+    },
+    {
+      "name": "sharpe_ratio",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": 1.0,
+      "interval_s": 3600,
+      "source": {
+        "type": "shell",
+        "cmd": "python3 -c \"import json; print(json.load(open('results/metrics.json'))['sharpe_ratio'])\""
+      },
+      "description": "Annualized Sharpe ratio (rough, trade-level)"
+    },
+    {
+      "name": "max_drawdown_pct",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": -0.15,
+      "interval_s": 3600,
+      "source": {
+        "type": "shell",
+        "cmd": "python3 -c \"import json; print(json.load(open('results/metrics.json'))['max_drawdown_pct'])\""
+      },
+      "description": "Worst drawdown from peak equity (negative number; closer to 0 is better)"
+    },
+    {
+      "name": "total_return_pct",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "interval_s": 3600,
+      "source": {
+        "type": "shell",
+        "cmd": "python3 -c \"import json; print(json.load(open('results/metrics.json'))['total_return_pct'])\""
+      },
+      "description": "Total return over the backtest period"
+    },
+    {
+      "name": "trades_count",
+      "kpi_type": "gauge",
+      "unit": "trades",
+      "direction": "higher",
+      "interval_s": 3600,
+      "source": {
+        "type": "shell",
+        "cmd": "python3 -c \"import json; print(json.load(open('results/metrics.json'))['trades_count'])\""
+      },
+      "description": "Number of round-trip trades in the latest backtest"
+    },
+    {
+      "name": "qa_score",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": 1.0,
+      "interval_s": 300,
+      "source": {
+        "type": "shell",
+        "cmd": "./metric.sh",
+        "timeout_s": 60
+      },
+      "description": "qa_check.py pass ratio"
+    }
+  ]
+}

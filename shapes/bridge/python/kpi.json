@@ -1,0 +1,79 @@
+{
+  "project": "<name>",
+  "shape": "bridge",
+  "kpis": [
+    {
+      "name": "health_up",
+      "kpi_type": "boolean",
+      "unit": "bool",
+      "direction": "higher",
+      "target": 1,
+      "interval_s": 60,
+      "source": {
+        "type": "http_status",
+        "url": "http://127.0.0.1:<PORT>/health",
+        "expect_status": 200
+      },
+      "description": "Is the service responding on /health?"
+    },
+    {
+      "name": "qa_score",
+      "kpi_type": "float",
+      "unit": "ratio",
+      "direction": "higher",
+      "target": 1.0,
+      "interval_s": 300,
+      "source": {
+        "type": "shell",
+        "cmd": "./metric.sh",
+        "timeout_s": 60
+      },
+      "description": "qa_check.py pass ratio (0.0\u20131.0)"
+    },
+    {
+      "name": "upstream_up",
+      "kpi_type": "boolean",
+      "unit": "bool",
+      "direction": "higher",
+      "target": 1,
+      "interval_s": 60,
+      "source": {
+        "type": "shell",
+        "cmd": "curl -sf http://127.0.0.1:${PORT:-<PORT>}/ready >/dev/null && echo 1 || echo 0"
+      },
+      "description": "Can the bridge reach its upstream? Distinct from health_up: the bridge can be perfectly alive and unable to do its job."
+    },
+    {
+      "name": "upstream_latency_ms",
+      "kpi_type": "gauge",
+      "unit": "ms",
+      "direction": "lower",
+      "target": 500,
+      "interval_s": 60,
+      "source": {
+        "type": "metric_log_grep",
+        "log_file": "logs/app.log",
+        "pattern": "phase=proxy duration_ms=(\\d+)",
+        "window_s": 3600,
+        "aggregate": "p95"
+      },
+      "description": "p95 upstream round-trip through the proxy path"
+    },
+    {
+      "name": "breaker_trips",
+      "kpi_type": "gauge",
+      "unit": "count",
+      "direction": "lower",
+      "target": 0,
+      "interval_s": 3600,
+      "source": {
+        "type": "metric_log_grep",
+        "log_file": "logs/app.log",
+        "pattern": "circuit breaker open",
+        "window_s": 86400,
+        "aggregate": "count"
+      },
+      "description": "Times the breaker opened. Non-zero means the upstream is unreliable, not that this bridge is."
+    }
+  ]
+}

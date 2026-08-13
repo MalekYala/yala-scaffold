@@ -1,0 +1,49 @@
+# gitleaks configuration — secret scanning before commits hit history.
+# Install: https://github.com/gitleaks/gitleaks
+# Run: gitleaks detect --source . --verbose
+
+title = "<name> gitleaks config"
+
+[extend]
+# Inherit the upstream defaults, then add custom rules below.
+useDefault = true
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API key"
+regex = '''sk-ant-[a-zA-Z0-9_-]{30,}'''
+tags = ["api", "anthropic"]
+
+[[rules]]
+id = "openai-api-key"
+description = "OpenAI API key"
+regex = '''sk-[a-zA-Z0-9]{32,}'''
+tags = ["api", "openai"]
+
+[[rules]]
+id = "xai-api-key"
+description = "xAI / Grok API key"
+regex = '''xai-[a-zA-Z0-9]{40,}'''
+tags = ["api", "xai"]
+
+[[rules]]
+id = "github-pat"
+description = "GitHub Personal Access Token"
+regex = '''ghp_[A-Za-z0-9]{36,}'''
+tags = ["api", "github"]
+
+[allowlist]
+description = "Files / patterns excluded from scanning"
+paths = [
+    '''\.env\.example$''',
+    '''README\.md$''',
+    '''CONTRIBUTING\.md$''',
+    '''AGENTS\.md$''',
+    '''LICENSE$''',
+]
+regexes = [
+    '''replace_me''',
+    '''your-key-here''',
+    '''<your-key>''',
+    '''xxxxxxxx''',
+]
