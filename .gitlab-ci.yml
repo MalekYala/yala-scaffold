@@ -1,0 +1,48 @@
+# CI for the kit itself: scaffold every shape and check the output, then on the
+# default branch push it to the GitHub repo.
+#
+# Publishing needs two CI/CD variables on the GitLab project:
+#   GITHUB_DEPLOY_KEY  type File, protected: private key of a GitHub deploy key
+#                      with write access to the repo
+#   GITHUB_REPO        e.g. git@github.com:<owner>/yala-scaffold.git
+# Without them the publish job doesn't run.
+
+stages: [test, publish]
+
+variables:
+  # Runner tag for every job. Empty matches any runner; set it as a project
+  # variable if your default runner isn't a docker executor.
+  YALA_CI_TAG: ""
+
+default:
+  tags: ["$YALA_CI_TAG"]
+
+test:kit:
+  stage: test
+  image: python:3.12-slim
+  script:
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends git >/dev/null
+    - pip install --quiet --root-user-action=ignore pyyaml
+    - python3 tests/check_ci_yaml.py
+    - bash -n yala.sh
+    - tests/scaffold_all_shapes.sh
+
+publish:github:
+  stage: publish
+  image: alpine:3.20
+  variables:
+    GIT_DEPTH: "0"
+  # One publish at a time, so two quick pushes can't race each other.
+  resource_group: github
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $GITHUB_DEPLOY_KEY && $GITHUB_REPO
+  script:
+    - apk add --no-cache git openssh-client >/dev/null
+    - install -d -m 700 "$HOME/.ssh"
+    - install -m 600 "$GITHUB_DEPLOY_KEY" "$HOME/.ssh/deploy_key"
+    # GitHub's published ed25519 host key (api.github.com/meta), pinned.
+    - echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > "$HOME/.ssh/known_hosts"
+    - export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+    # Plain push, no force: if GitHub has commits GitLab doesn't, this fails
+    # instead of overwriting them.
+    - git push "$GITHUB_REPO" "HEAD:refs/heads/$CI_DEFAULT_BRANCH"
