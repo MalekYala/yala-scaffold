@@ -752,7 +752,9 @@ else
     # Installed at run time, unpinned and on purpose: an advisory database is
     # only useful when it is current, and these are diagnostics rather than
     # build dependencies. Same reasoning as govulncheck above.
-    AUDIT_CMD="pip install --quiet --disable-pip-version-check pip-audit && pip-audit --requirement requirements.txt"
+    # Invoked as a module: as a non-root user pip installs into ~/.local/bin,
+    # which is not on PATH in the sandbox, so a bare \`pip-audit\` is not found.
+    AUDIT_CMD="pip install --quiet --disable-pip-version-check --no-warn-script-location pip-audit && python -m pip_audit --requirement requirements.txt"
     DEADCODE_CMD="pip install --quiet --disable-pip-version-check deptry vulture && { deptry . || echo 'deptry reported findings (non-blocking)'; }; vulture . --min-confidence 80 || echo 'vulture reported findings (non-blocking)'"
     DEADCODE_IGNORE_NOTE="pyproject.toml ([tool.deptry] / [tool.vulture])"
 fi
@@ -1316,9 +1318,14 @@ SANDBOX_RUN = docker run --rm --read-only --cap-drop ALL \\
 # none\` is not an option for them. Everything else — read-only rootfs, dropped
 # capabilities, no-new-privileges, PID cap, bounded tmpfs — is unchanged, and
 # these targets are never on the build path.
+# Tools installed at run time (pip-audit, knip) go to /opt/tools, the one
+# exec-capable tmpfs: /tmp stays noexec, but compiled extensions (tomli) cannot
+# be mapped from it and pip-audit runs a scratch venv from TMPDIR.
 SANDBOX_RUN_NET = docker run --rm --read-only --cap-drop ALL \\
 	--security-opt no-new-privileges --pids-limit 256 \\
 	--tmpfs /tmp:$SANDBOX_TMPFS_OPTIONS \\
+	--tmpfs /opt/tools:rw,exec,nosuid,nodev,size=256m,mode=1777 \\
+	-e PYTHONUSERBASE=/opt/tools -e TMPDIR=/opt/tools \\
 	-e HOME=/tmp -e XDG_CACHE_HOME=/tmp/.cache \\
 	-e PIP_CACHE_DIR=/tmp/pip-cache -e npm_config_cache=/tmp/npm-cache \\
 	-e GOFLAGS=-mod=mod -e GOPATH=/tmp/go -e GOCACHE=/tmp/go-build
