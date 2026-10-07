@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Any
 
 from fastapi import FastAPI
 
@@ -49,7 +50,7 @@ app = FastAPI(title="<name>", version=settings.app_version)
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
+def health() -> dict[str, Any]:
     """Liveness/readiness probe. Returns 200 if the service and its critical
     dependencies are up. See AGENTS.md §14.
 

@@ -17,3 +17,5 @@ pre-commit==4.6.1
 # Manual tool, not run in CI. See Makefile `make profile` target and
 # docs/ARCHITECTURE.md § "Profiling with py-spy".
 py-spy==0.4.2
+# Starlette TestClient transport; plain httpx is deprecated for it
+httpx2==2.13.1

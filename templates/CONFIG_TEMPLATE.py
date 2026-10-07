@@ -122,8 +122,9 @@ FIELDS: list[Field] = [
     ),
     Field(
         "HOST",
-        "In-container bind address. The compose port mapping restricts host exposure to 127.0.0.1; do not set this to 127.0.0.1 in Docker or the service becomes unreachable through the mapping.",
+        "Bind address for a local, non-Docker run (defaults to 127.0.0.1). Leave it unset in Docker: the image binds 0.0.0.0 and the compose port mapping limits exposure to 127.0.0.1.",
         default="127.0.0.1",
+        commented=True,
     ),
     Field(
         "LOG_LEVEL",

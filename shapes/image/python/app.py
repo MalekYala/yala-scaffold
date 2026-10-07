@@ -74,7 +74,7 @@ async def security_headers(
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
+def health() -> dict[str, Any]:
     # The version is part of the response on purpose: during an incident the
     # question is almost never "is something running" but "*which build* is
     # running".

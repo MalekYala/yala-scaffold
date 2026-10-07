@@ -718,6 +718,7 @@ fill_dir "$SHAPE_DIR" "$PROJ"
 
 if [[ "$LANG" == "node" ]]; then
     LINT_CMD="npm run lint"
+    FORMAT_CMD="npm run lint -- --fix"
     TYPECHECK_CMD="npm run typecheck"
     SANDBOX_TMPFS_OPTIONS="rw,noexec,nosuid,nodev,size=128m"
     # Dependency vulnerabilities. --audit-level=high keeps a fresh scaffold
@@ -729,6 +730,7 @@ if [[ "$LANG" == "node" ]]; then
     DEADCODE_IGNORE_NOTE="knip.json"
 elif [[ "$LANG" == "go" ]]; then
     LINT_CMD='test -z "$$(/usr/local/go/bin/gofmt -l .)" && /usr/local/go/bin/go vet ./...'
+    FORMAT_CMD='/usr/local/go/bin/gofmt -w .'
     TYPECHECK_CMD="/usr/local/go/bin/go test ./..."
     # The Go toolchain executes temporary test binaries from GOCACHE.
     SANDBOX_TMPFS_OPTIONS="rw,exec,nosuid,nodev,size=512m,mode=1777"
@@ -737,6 +739,7 @@ elif [[ "$LANG" == "go" ]]; then
     DEADCODE_IGNORE_NOTE="go.mod"
 else
     LINT_CMD="ruff check . && ruff format --check ."
+    FORMAT_CMD="ruff format . && ruff check --fix ."
     TYPECHECK_CMD="mypy ."
     SANDBOX_TMPFS_OPTIONS="rw,noexec,nosuid,nodev,size=128m"
     # Installed at run time, unpinned and on purpose: an advisory database is
@@ -1243,7 +1246,7 @@ else
 fi
 
 cat > Makefile <<MAKEFILE
-.PHONY: help doctor setup build build-test up down logs test qa metric lint typecheck health run iterate iterate-bg stop-iterate dashboard clean \
+.PHONY: help doctor setup build build-test up down logs test qa metric lint format typecheck health run iterate iterate-bg stop-iterate dashboard clean \
         reindex reindex-full rag-search rag-stats \
         bot bot-check bot-logs bot-down bot-standalone \
         gitea gitea-runner gitea-bootstrap gitea-logs gitea-down gitea-nuke \
@@ -1327,6 +1330,7 @@ help:
 	@echo "make qa            — run the end-to-end checker in Docker"
 	@echo "make metric        — compute the project metric in Docker"
 	@echo "make lint          — lint in the isolated test image"
+	@echo "make format        — auto-format + safe lint fixes (rewrites files)"
 	@echo "make typecheck     — type/syntax check in the isolated test image"
 	@echo "make health        — shape-aware health probe"
 	@echo "make profile       — explain the explicit debug override required for profiling"
@@ -1473,6 +1477,16 @@ $STYLE_TARGET
 
 typecheck: build-test
 	\$(SANDBOX_RUN) \$(TEST_IMAGE) sh -lc '$TYPECHECK_CMD'
+
+# Rewrites files, so it mounts the working tree (like env-example). Still no
+# network. Run it before \`make lint\` instead of hand-rolling a docker run.
+format: build-test
+	docker run --rm --cap-drop ALL --security-opt no-new-privileges \\
+		--network none --pids-limit 256 \\
+		-e HOME=/tmp -e XDG_CACHE_HOME=/tmp/.cache -e RUFF_CACHE_DIR=/tmp/ruff \\
+		-v "\$(CURDIR)":/work -w /work \\
+		--user "\$\$(id -u):\$\$(id -g)" \\
+		\$(TEST_IMAGE) sh -lc '$FORMAT_CMD'
 
 # ── Drift checks ───────────────────────────────────────────────────────────
 # Three failure modes lint and typecheck structurally cannot see: a locale
