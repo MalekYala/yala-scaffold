@@ -18,6 +18,9 @@ from pathlib import Path
 import yaml
 
 SCRIPT_KEYS = ("script", "before_script", "after_script")
+# Keys at the top level of .gitlab-ci.yml that are not jobs.
+RESERVED = {"stages", "variables", "default", "include", "workflow", "image", "services", "cache", "before_script", "after_script"}
+DEFAULT_STAGES = ["build", "test", "deploy"]  # GitLab's implicit list when `stages` is absent
 
 
 def _strings_only(items: object) -> bool:
@@ -32,12 +35,24 @@ def check(path: Path) -> list[str]:
     except yaml.YAMLError as exc:
         return [f"{path}: YAML parse error: {str(exc).splitlines()[0]}"]
     problems = []
-    for job, spec in (doc or {}).items():
-        if not isinstance(spec, dict):
+    doc = doc or {}
+    # Fragments (e.g. addons/review/ci.gitlab-ci.yml) are `include`d into a
+    # project's main file and inherit its stages and default.tags.
+    fragment = path.name not in {".gitlab-ci.yml", "GITLAB_CI_TEMPLATE.yml"}
+    stages = set(doc.get("stages") or DEFAULT_STAGES) | {".pre", ".post"}
+    for job, spec in doc.items():
+        if not isinstance(spec, dict) or job in RESERVED:
             continue
         for key in SCRIPT_KEYS:
             if key in spec and not _strings_only(spec[key]):
                 problems.append(f"{path}: job {job!r} {key} has a non-string item (unquoted ': '?)")
+        # GitLab rejects the whole file when a job names an undeclared stage.
+        if not fragment and not job.startswith(".") and spec.get("stage", "test") not in stages:
+            problems.append(f"{path}: job {job!r} uses stage {spec.get('stage')!r}, not in stages {sorted(stages - {'.pre', '.post'})}")
+    # Every job must be routable to a runner whose executor matches the file.
+    tags = (doc.get("default") or {}).get("tags")
+    if not fragment and (tags != ["$YALA_CI_TAG"] or "YALA_CI_TAG" not in (doc.get("variables") or {})):
+        problems.append(f"{path}: missing variables.YALA_CI_TAG + default.tags ['$YALA_CI_TAG']")
     return problems
 
 

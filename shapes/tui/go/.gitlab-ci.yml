@@ -1,4 +1,14 @@
-stages: [test, build]
+stages: [lint, security, test, build]
+
+variables:
+  # Runner tag for every job (see default.tags). Empty = any runner, e.g.
+  # GitLab.com shared runners. Set YALA_CI_TAG when scaffolding, or as a
+  # project CI/CD variable, to pin jobs to a Docker-executor runner.
+  YALA_CI_TAG: "<CI_TAG>"
+
+default:
+  # Expands to [] when YALA_CI_TAG is empty, so untagged runners still match.
+  tags: ["$YALA_CI_TAG"]
 
 test:
   image: golang:1.24-alpine

@@ -79,6 +79,10 @@ OUT_DIR="$PWD"
 # Local domain used in generated docs/proxy examples. Placeholder by default so
 # nothing in a fresh project points at one operator's private hostnames.
 SCAFFOLD_DOMAIN="${SCAFFOLD_DOMAIN:-example.local}"
+# GitLab runner tag written into .gitlab-ci.yml (variables.YALA_CI_TAG).
+# Empty by default: jobs run on any runner. Operators whose default runner is
+# not a Docker executor set this (e.g. YALA_CI_TAG=docker) in their shell.
+YALA_CI_TAG="${YALA_CI_TAG:-}"
 
 # Add-ons are opt-in. A newcomer scaffolding their first project should get a
 # runnable project and nothing else; the IRC bot, per-project git server and
@@ -463,6 +467,7 @@ DATE_SED="$(escape_sed_replacement "$DATE_ISO")"
 PROJ_SED="$(escape_sed_replacement "$PROJ")"
 KIT_ROOT_SED="$(escape_sed_replacement "$KIT_ROOT")"
 DOMAIN_SED="$(escape_sed_replacement "$SCAFFOLD_DOMAIN")"
+CI_TAG_SED="$(escape_sed_replacement "$YALA_CI_TAG")"
 QA_FILE_SED="$(escape_sed_replacement "$QA_FILE")"
 HOST_UID_SED="$(escape_sed_replacement "$HOST_UID")"
 HOST_GID_SED="$(escape_sed_replacement "$HOST_GID")"
@@ -484,6 +489,7 @@ fill() {
         -e "s|<CADDY_CONFIG>|~/caddy-proxy/Caddyfile|g" \
         -e "s|<SCRIPTS>|$KIT_ROOT_SED/scripts|g" \
         -e "s|<domain>|$DOMAIN_SED|g" \
+        -e "s|<CI_TAG>|$CI_TAG_SED|g" \
         -e "s|<qa_file>|$QA_FILE_SED|g" \
         -e "s|<HOST_UID>|$HOST_UID_SED|g" \
         -e "s|<HOST_GID>|$HOST_GID_SED|g" \
@@ -581,8 +587,9 @@ fill "$TPL/CHECK_LOCALES_TEMPLATE.py" > scripts/check_locales.py
 fill "$TPL/CHECK_ENV_TEMPLATE.py" > scripts/check_env.py
 fill "$TPL/CHECK_ROOT_CLUTTER_TEMPLATE.py" > scripts/check_root_clutter.py
 fill "$TPL/REFRESH_AGENTS_TEMPLATE.py" > scripts/refresh_agents.py
+fill "$TPL/CI_LINT_TEMPLATE.py" > scripts/ci_lint.py
 chmod +x scripts/check_locales.py scripts/check_env.py \
-    scripts/check_root_clutter.py scripts/refresh_agents.py
+    scripts/check_root_clutter.py scripts/refresh_agents.py scripts/ci_lint.py
 
 # Style-token resolution — only for shapes that actually render a UI. A CSS
 # custom property that is referenced but never defined renders invisible with
@@ -1246,7 +1253,7 @@ else
 fi
 
 cat > Makefile <<MAKEFILE
-.PHONY: help doctor setup build build-test up down logs test qa metric lint format typecheck health run iterate iterate-bg stop-iterate dashboard clean \
+.PHONY: help doctor setup build build-test up down logs test qa metric lint format ci-lint typecheck health run iterate iterate-bg stop-iterate dashboard clean \
         reindex reindex-full rag-search rag-stats \
         bot bot-check bot-logs bot-down bot-standalone \
         gitea gitea-runner gitea-bootstrap gitea-logs gitea-down gitea-nuke \
@@ -1331,6 +1338,7 @@ help:
 	@echo "make metric        — compute the project metric in Docker"
 	@echo "make lint          — lint in the isolated test image"
 	@echo "make format        — auto-format + safe lint fixes (rewrites files)"
+	@echo "make ci-lint       — validate .gitlab-ci.yml with GitLab (needs GITLAB_TOKEN)"
 	@echo "make typecheck     — type/syntax check in the isolated test image"
 	@echo "make health        — shape-aware health probe"
 	@echo "make profile       — explain the explicit debug override required for profiling"
@@ -1498,6 +1506,11 @@ check-locales:
 
 check-clutter:
 	@python3 scripts/check_root_clutter.py
+
+# Asks the project's GitLab whether it will accept .gitlab-ci.yml. Runs on the
+# host (needs the network and GITLAB_TOKEN); not part of \`make lint\`.
+ci-lint:
+	@python3 scripts/ci_lint.py
 
 check-env: build-test
 	\$(SANDBOX_RUN) \$(TEST_IMAGE) sh -lc 'python3 scripts/check_env.py'

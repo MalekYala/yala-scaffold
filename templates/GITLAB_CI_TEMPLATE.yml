@@ -25,6 +25,10 @@ stages:
   - test
 
 variables:
+  # Runner tag for every job (see default.tags). Empty = any runner, e.g.
+  # GitLab.com shared runners. Set YALA_CI_TAG when scaffolding, or as a
+  # project CI/CD variable, to pin jobs to a Docker-executor runner.
+  YALA_CI_TAG: "<CI_TAG>"
   # docker:dind talks over TLS on 2376 by default
   DOCKER_HOST: tcp://docker:2376
   DOCKER_TLS_CERTDIR: "/certs"
@@ -38,6 +42,8 @@ variables:
   DIND_IMAGE: docker:27-dind
 
 default:
+  # Expands to [] when YALA_CI_TAG is empty, so untagged runners still match.
+  tags: ["$YALA_CI_TAG"]
   # Fail fast on broken runners / transient network errors
   retry:
     max: 2
