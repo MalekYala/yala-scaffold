@@ -43,8 +43,8 @@ lint:python:
   before_script:
     - pip install --quiet --no-cache-dir ruff
   script:
-    - ruff check . || echo "WARN: ruff found issues"
-    - ruff format --check . || echo "WARN: ruff format would rewrite files"
+    - 'ruff check . || echo "WARN: ruff found issues"'
+    - 'ruff format --check . || echo "WARN: ruff format would rewrite files"'
   allow_failure: true
 
 # Cheap drift checks: a locale missing a key, or an .env.example that no

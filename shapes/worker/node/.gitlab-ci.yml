@@ -35,7 +35,7 @@ lint:node:
   before_script:
     - if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
   script:
-    - npm run lint --if-present || echo "WARN: lint not configured or failed"
+    - 'npm run lint --if-present || echo "WARN: lint not configured or failed"'
   allow_failure: true
 
 # Cheap drift checks: a locale missing a key, or an .env.example that no

@@ -59,8 +59,8 @@ lint:python:
   before_script:
     - pip install --quiet --no-cache-dir ruff
   script:
-    - ruff check . || echo "WARN: ruff found issues"
-    - ruff format --check . || echo "WARN: ruff format would rewrite files"
+    - 'ruff check . || echo "WARN: ruff found issues"'
+    - 'ruff format --check . || echo "WARN: ruff format would rewrite files"'
   allow_failure: true
 
 lint:node:
@@ -71,7 +71,7 @@ lint:node:
   before_script:
     - if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
   script:
-    - npm run lint --if-present || echo "WARN: no lint script or lint failed"
+    - 'npm run lint --if-present || echo "WARN: no lint script or lint failed"'
   allow_failure: true
 
 # ── secret-scan ──────────────────────────────────────────────────────────────

@@ -36,7 +36,7 @@ lint:python:
   before_script:
     - pip install --quiet --no-cache-dir ruff
   script:
-    - ruff check . || echo "WARN: ruff found issues"
+    - 'ruff check . || echo "WARN: ruff found issues"'
   allow_failure: true
 
 # Cheap drift checks: a locale missing a key, or an .env.example that no
@@ -110,9 +110,9 @@ test:run-and-verify:
     - echo "Running analysis against fixtures/…"
     - docker run --rm -v "$PWD/fixtures:/app/fixtures:ro" -v "$PWD/outputs:/app/outputs" -v "$PWD/results:/app/results" --env-file .env "$IMAGE_TAG"
     - echo "Verifying expected outputs landed…"
-    - test -f results/metrics.json || { echo "MISSING: results/metrics.json (analyze.py did not complete)"; exit 1; }
-    - test -f outputs/summary.json || { echo "MISSING: outputs/summary.json"; exit 1; }
-    - test -f outputs/report.md || { echo "MISSING: outputs/report.md"; exit 1; }
+    - 'test -f results/metrics.json || { echo "MISSING: results/metrics.json (analyze.py did not complete)"; exit 1; }'
+    - 'test -f outputs/summary.json || { echo "MISSING: outputs/summary.json"; exit 1; }'
+    - 'test -f outputs/report.md || { echo "MISSING: outputs/report.md"; exit 1; }'
     - python3 -c "import json; d=json.load(open('results/metrics.json')); assert d.get('success'), d"
     - echo "Running qa_check.py against produced outputs…"
     - python3 -m pip install --quiet httpx python-dotenv
